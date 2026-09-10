@@ -1,0 +1,33 @@
+{
+  "name": "obsidian-kairos",
+  "version": "0.1.0",
+  "description": "Turns journal checkboxes into real alerts.",
+  "private": true,
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "typecheck": "tsc -noEmit -skipLibCheck",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "smoke": "node scripts/smoke.mjs",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
+  },
+  "keywords": [
+    "obsidian",
+    "reminders",
+    "journal",
+    "daily-notes"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "esbuild": "0.25.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-obsidianmd": "^0.4.2",
+    "obsidian": "^1.13.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^4.0.0",
+    "vite": "^6.4.3"
+  }
+}

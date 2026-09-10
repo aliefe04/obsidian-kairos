@@ -1,0 +1,165 @@
+# Kairos — Product and Engineering Plan
+
+A reminder engine for Obsidian that turns ordinary journal checkboxes into alerts that actually arrive.
+
+```
+- [ ] msg to dentist 09:00
+```
+
+Written in tomorrow's daily note today, that line alerts at 09:00 — on the desktop, on the phone, and
+in the calendar app. No new syntax to learn, no emoji to insert, no companion app to install before
+the first alert works.
+
+Status: **Phase 0 complete and verified** (engine + channels + tests + real-app smoke test, §9).
+Owner: this repo. Decisions: `docs/decisions.md`. Specifications: `docs/spec/syntax.md`,
+`docs/spec/state-model.md`.
+
+---
+
+## 1. The job, and why the existing plugins miss it
+
+The job is small and specific: *I plan tomorrow in today's journal, and I want to be interrupted at
+the right minute.* Today's ecosystem splits that job across at least six plugins and apps, each with
+its own syntax, and none of them solves it end to end:
+
+| What the user needs | What exists | Where it breaks |
+|---|---|---|
+| Plain checkbox + time in a dated note | Reminder needs `(@2026-09-11 09:00)`; Tasks has no time field at all; the ntfy plugins need `⏰`/`@remind()`/`#remind` | The syntax is the product's front door, and it is a wall |
+| Note date resolved from the journal itself | No plugin resolves a reminder's date from the note it is written in | Users must retype the date inside a file already named after the date |
+| Alert while Obsidian is closed, on a phone | Reminder's ntfy mode registers only 24 h ahead ("if Obsidian isn't opened for more than a day… won't notify you"); Remindian is a separate macOS app; Notelert needs a companion app | Missing the alert is the whole failure mode |
+| Exactly one alert across laptop + phone | Reminder has an open issue from 2022 asking for reminder state to sync before firing (#85); duplicates are a documented complaint | Silent duplicates train users to ignore alerts |
+| Settings that behave the same on both devices | Reminder has no timezone setting at all; wall-clock strings only | A travelling user gets the wrong hour |
+
+The most-repeated complaint in this market is not "the syntax is awkward", it is **"the reminder
+never fired"** — and the second is **"it fired twice"**. Both are engineering problems, and both are
+solvable. Details and sources: `docs/market.md`.
+
+## 2. Principles
+
+1. **The note is the source of truth.** State files may be deleted without losing a single reminder.
+   Only "already fired" and "snoozed" history lives outside the note.
+2. **No alert may be silently dropped.** An alert that was due while the app was closed is delivered
+   late, with its age stated, or folded into a digest by explicit user choice — never discarded
+   quietly.
+3. **Degrade, never go silent.** If the cross-device lease is unreadable, fire locally. If the push
+   channel is down, show the toast. If a note cannot be date-resolved, say so once instead of guessing.
+4. **Interoperate; never own the line.** Kairos reads Tasks, Reminder, Dataview and Kanban syntax and
+   writes only `⏰`, so installing it cannot corrupt another plugin's task state.
+5. **The platform limits are documented, not hidden.** Where Obsidian makes something impossible, the
+   UI says so and offers the nearest honest alternative (`docs/delivery.md`).
+
+## 3. The moat
+
+Five properties the incumbents do not have together. Each is implemented (not planned) unless marked.
+
+| # | Property | Why it is defensible |
+|---|---|---|
+| 1 | **Zero-ceremony syntax**: bare `HH:mm` in a dated note, plus explicit `@`, `⏰`, `(@…)` forms | The date cascade (§`spec/syntax.md` §2) is the hard part — filename formats, month folders, frontmatter, H1, nearest date heading, and a refusal to guess when `08-09-2026` is ambiguous. A competitor can copy the regex; the cascade and its ambiguity handling are a design commitment |
+| 2 | **Four delivery tiers, including one that needs no account, no server and no network** | Desktop OS notification, `.ics` written into the vault for the user's own calendar app, ntfy/Bark/Pushover webhooks, and an optional self-hosted relay. No other plugin in the registry exports reminders *to* ICS ("ICS Calendar" only reads it) |
+| 3 | **Alarm-grade reliability semantics**: deterministic instance identity, create-only per-device state files, a lease with fencing, a 60-second dedupe window, and per-reminder catch-up policy | This is where "never fired" and "fired twice" die. Sync-safe file layout is dictated by Obsidian Sync's actual rules (`docs/spec/state-model.md` §4) |
+| 4 | **Two severities, grounded in interruption research** | Alarms interrupt; digests batch at a chosen hour. Shipping only alarms is how reminder plugins get uninstalled in week two |
+| 5 | **Contribution lanes built into the design**: a channel SDK, locale packs as data-only PRs, and a recipes gallery | Users add LINE/Matrix/Home Assistant/webhook channels and their own language without touching the engine — the ecosystem grows the product while the maintainers sleep |
+
+## 4. Non-goals
+
+- Not a task manager. No projects, priorities, or Gantt views; existing plugins own that.
+- Not a calendar UI. Kairos emits `.ics`; it does not render a month grid.
+- Not a sync service. Vault data stays in the vault; the only outbound payloads are the ones a user
+  configures, and the default payload is a task title.
+- No recurrence advancement in v0.1 (`🔁` lines are displayed, never advanced — that stays Tasks' or
+  Reminder's job until the ownership question is settled).
+- No telemetry, no accounts, no closed-source component.
+
+## 5. Architecture
+
+| Layer | Module | Responsibility |
+|---|---|---|
+| Parse | `src/parse/{timeTokens,noteDate,parseNote,locales}` | Token grammar, the date cascade, `metadataCache` list items → `ParsedReminder[]` |
+| Index | `src/index/indexer.ts` | Incremental vault scan, debounced per-file reparse, ambiguity reporting |
+| Schedule | `src/schedule/{engine,time,stateStore}` | Due plan, single next-wake timer, lease, dedupe, catch-up, snooze, durability |
+| Deliver | `src/channels/{desktop,ntfy,ics}`, `src/ui/*` | Channel SDK with `local` and `server-scheduled` modes; modal with done/snooze; agenda view |
+| Surface | `src/settings.ts`, `src/main.ts` | Declarative settings (searchable), commands, wiring |
+
+Invariants and failure modes: `docs/architecture.md`. Measured limits: §9.
+
+## 6. Delivery
+
+Four tiers, each with an honest statement of what it can and cannot do, and which platform limit
+forces it: `docs/delivery.md`. The short version:
+
+| Tier | Covers | Requires |
+|---|---|---|
+| Desktop OS notification | Obsidian open, focused or not | Nothing |
+| `.ics` in the vault | Obsidian **fully closed**, offline, both platforms, native OS alarms | A calendar app the user already has |
+| Webhook push (ntfy, Bark, Pushover, …) | Phone alert with Obsidian closed, up to the provider's horizon | A topic/key the user pastes once |
+| Self-hosted relay (Phase 3) | Multi-day horizons, no third-party account | Docker or a free-tier worker |
+
+## 7. Community and sustainability
+
+The repo is structured to outlive its author from day one: an organisation rather than a personal
+account, CODEOWNERS, an RFC path for changes to the syntax or state model, issue templates, a
+contribution lane per channel and per locale, and a release pipeline with provenance attestation.
+The distribution path changed in 2026 — submissions now go through the developer dashboard and the
+automated review inspects **every** release, not just the first. Full plan: `docs/community.md`.
+
+## 8. Roadmap
+
+Phase 0 (verified, this repo) → Phase 1 (public v0.1: settings polish, agenda view, ICS, ntfy, BRAT
+beta, dashboard submission) → Phase 2 (recurrence opt-in, locale packs, digest, more channels,
+mobile foreground alerts, iOS Shortcuts recipe) → Phase 3 (self-hosted relay, encryption, calendar
+round-trip) → Phase 4 (ecosystem: channel contributions, recipes gallery, integrations).
+Acceptance criteria per phase: `docs/roadmap.md`.
+
+## 9. What is verified today
+
+Machine-checked, on this machine, Obsidian 1.13.7:
+
+| Check | Command | Result |
+|---|---|---|
+| Bundle builds | `npm run build` | pass (`main.js`, 63 KB) |
+| Review-guideline lint | `npm run lint` | 0 errors, 0 warnings (`eslint-plugin-obsidianmd`) |
+| Type checking | `tsc -noEmit -skipLibCheck` | pass |
+| Behaviour | `npx vitest run` | 8 files, 75 tests, pass |
+| Harness contract | `verify_work` | PASS — 4 checks, re-run against the current tree |
+| **Real app, end to end** | `npm run smoke` | pass — plugin loads; a dated note containing `- [ ] smoke test 21:11` is parsed; the alert fires **exactly once** through the catch-up path (`ageMinutes: 2`, `severity: alarm`); the fired log records `dueLocal: 2026-09-10T21:11`; the rendered notice reads `smoke test · 21:11 · 2 min late · 10-09-2026-smoke`; exactly one delivery notice exists for the instance |
+
+The smoke harness (`scripts/smoke.mjs`) launches a real Obsidian with an isolated profile against a
+throwaway vault, drives it over the Chrome DevTools Protocol, and asserts the parsed schedule, the
+exact-once guarantee and the rendered alert text — not mere liveness. It is dependency-free and is the
+regression gate for anything that touches parsing, scheduling or delivery.
+
+## 10. Defects found before anything was called done
+
+The test suite and the real-app harness found these; each is fixed and pinned by a test or an
+assertion. They matter more than the feature list, because "it never fired" and "it fired twice" are
+the market's top two complaints and these were all instances of those two failures.
+
+| Defect | How it would have shown up for a user |
+|---|---|
+| Alerts fired `leadMinutes` early (arming window treated as an early alert) | Every reminder arrives 10 minutes before the time written in the note |
+| A snoozed instance could fire again from catch-up | Two alerts for one snooze |
+| DST gap/overlap resolved wrongly outside US zones | A 02:30 reminder on a European transition night lands an hour off |
+| Snooze rewrite sliced a fixed 5 characters | `9:00am` becomes `09:50m` — the note is corrupted |
+| Notes with an unresolvable date were dropped silently | Reminders vanish with no explanation instead of an "N notes could not be date-resolved" notice |
+| A snooze was cancelled by the next vault rescan | Snoozing did nothing at all |
+| **One reminder delivered three times** in the first real-app run (overlapping ticks, with the instance marked only after the channel was awaited) | Three notifications for one task — and the original `fired.lines > 0` assertion could not see it, so the assertion itself was replaced by `exactly once` |
+| The alert text never said *what* the reminder was (`HH:mm · age · note name`), and the desktop fallback path duplicated the title | A 09:00 buzz that does not tell you what to do |
+
+Two of these — the triple delivery and the contentless alert text — were found only by reading the
+real app's output, not by unit tests. That is the argument for keeping the smoke harness as a release
+gate rather than a convenience script.
+
+
+## 11. Success metrics
+
+| Metric | Target for v0.1 + 90 days | How measured |
+|---|---|---|
+| Install base | 2,000 installs in the dashboard | Dashboard analytics |
+| Retention proxy | ≥ 60% of installs still enabled at 30 days | Dashboard |
+| Reliability | **zero** open issues titled "did not fire" / "fired twice" | Issue labels + triage |
+| Mobile delivery adoption | ≥ 25% of installs configure a push or ICS tier | Opt-in diagnostic counter, user-initiated only |
+| Community | ≥ 3 external channel or locale contributions merged | Git history |
+| Review | Clean automated review on every release | Dashboard |
+
+No telemetry is collected; all five are measurable from the public dashboard, GitHub, or data the
+user chooses to share in a report.

@@ -1,0 +1,11 @@
+{
+  "id": "kairos",
+  "name": "Kairos",
+  "version": "0.1.0",
+  "minAppVersion": "1.13.0",
+  "description": "Turns dated journal checkboxes into real alerts, with quiet hours and catch-up.",
+  "author": "aliefe",
+  "authorUrl": "https://github.com/aliefe",
+  "fundingUrl": "https://github.com/sponsors/aliefe",
+  "isDesktopOnly": false
+}

@@ -1,0 +1,13 @@
+// Kairos dev/tooling files that should not be tracked.
+node_modules/
+main.js
+*.js.map
+data.json
+
+# test vault and browser profile used by scripts/smoke.mjs
+.testvault/
+.testvault-state/
+*.log
+
+# macOS
+.DS_Store

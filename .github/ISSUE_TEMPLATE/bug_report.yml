@@ -1,0 +1,62 @@
+name: Bug report
+description: Something did not alert, alerted twice, or alerted wrong.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do not paste note content you do not want public.
+        Run `Kairos: copy diagnostics` in the command palette and paste the result below —
+        it contains versions and paths, never note text.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The reminder line as written, and what Kairos did instead.
+      placeholder: |
+        - [ ] msg to dentist 09:00   in journal/2026/11-09-2026-Friday.md
+        Expected an alert at 09:00, nothing fired.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Output of the command `Kairos: copy diagnostics`.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: obsidian-version
+    attributes:
+      label: Obsidian version
+      placeholder: 1.13.7
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Desktop (macOS)
+        - Desktop (Windows)
+        - Desktop (Linux)
+        - Mobile (iOS)
+        - Mobile (Android)
+    validations:
+      required: true
+  - type: input
+    id: kairos-version
+    attributes:
+      label: Kairos version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Other plugins involved (Tasks, Reminder), sync setup, screenshots.
+    validations:
+      required: false
