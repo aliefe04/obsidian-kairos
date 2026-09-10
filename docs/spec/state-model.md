@@ -106,8 +106,12 @@ Rules that are easy to get wrong, so they are stated here then tested:
   (the alert says "09:00 — 2h ago"), because a silently dropped alarm is the single most common
   complaint in this market. `skip_and_mark_missed` exists for people who hate late alerts.
 - **Two severities.** `alarm` = interrupt now (OS notification, sound, modal). `digest` = batched at
-  a user-configured window (default 08:00 and 18:00). Reminders inside quiet hours, and every
-  catch-up older than `grace`, become digest items. This is HCI-grounded: interruptive
+  a user-configured window (default 08:00 and 18:00). A reminder whose written time is inside quiet
+  hours is a digest item, decided when the note is parsed. A catch-up older than `grace` keeps its own
+  severity and applies its policy instead: `fire_now_with_age` (the default) delivers it with its age,
+  `fold_into_digest` delivers it as a digest at the next window — that window is chosen once, by the
+  pass that notices the miss, so a pass running after a window cannot push the item to the following
+  one — and `skip_and_mark_missed` records it without an alert. This is HCI-grounded: interruptive
   notifications cost ~23 minutes of refocus (Mark et al., CHI 2008), deferring to breakpoints
   reduces frustration (Iqbal & Bailey, CHI 2008), and batching improves wellbeing (Fitz et al.,
   2019). Shipping only alarms would make this plugin the thing users uninstall in week two.

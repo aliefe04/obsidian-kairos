@@ -41,4 +41,24 @@ export default defineConfig([
 			"no-restricted-globals": "off",
 		},
 	},
+	{
+		// The parse layer is pure on purpose: it is unit-tested without an Obsidian
+		// runtime, and the quiet-hours severity rule lives there rather than in
+		// `settings.ts` for that reason. An import of `obsidian` would not fail those
+		// tests, because vitest aliases the module, so it is forbidden here instead.
+		files: ["src/parse/**/*.ts"],
+		rules: {
+			"no-restricted-imports": [
+				"error",
+				{
+					patterns: [
+						{
+							group: ["obsidian", "obsidian/*", "**/settings", "../settings"],
+							message: "The parse layer must not depend on Obsidian or on the settings module.",
+						},
+					],
+				},
+			],
+		},
+	},
 ]);

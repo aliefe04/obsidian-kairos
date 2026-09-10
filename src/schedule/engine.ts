@@ -86,12 +86,15 @@ const HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export interface DuePlan {
 	due: ReminderRecord[];
 	catchUp: ReminderRecord[];
+	/** Due now: a digest window has arrived, so the tick delivers these as digests. */
 	digest: Array<{ record: ReminderRecord; deliverAt: number }>;
 	waiting: ReminderRecord[];
 	/** Inside the lead window: claim the lease now, deliver at `due`. */
 	arming: ReminderRecord[];
 	nextWakeAt: number | null;
 	dueEpochMs: Map<string, number>;
+	/** The window chosen this pass for each folded catch-up, for the engine to remember. */
+	foldWindows: Map<string, number>;
 }
 
 export interface DuePlanInput {
@@ -102,6 +105,8 @@ export interface DuePlanInput {
 	tzId: string;
 	/** Instances already in this device's fired log. */
 	alreadyFired: ReadonlySet<string>;
+	/** Windows already pinned for a folded catch-up, so a later tick still delivers it. */
+	foldWindows?: ReadonlyMap<string, number>;
 }
 
 /** The next configured digest window at or after `epochMs`. */
@@ -148,6 +153,7 @@ export function computeDuePlan(input: DuePlanInput): DuePlan {
 		arming: [],
 		nextWakeAt: null,
 		dueEpochMs: new Map<string, number>(),
+		foldWindows: new Map<string, number>(),
 	};
 	const wake = (candidate: number): void => {
 		if (plan.nextWakeAt === null || candidate < plan.nextWakeAt) {
@@ -195,6 +201,28 @@ export function computeDuePlan(input: DuePlanInput): DuePlan {
 		}
 		if (input.now <= due + graceMs) {
 			plan.due.push(record);
+			continue;
+		}
+		// Past grace, the record's own catch-up policy decides. `fold_into_digest`
+		// means "do not interrupt late": it waits for a digest window exactly like an
+		// item whose written time is inside quiet hours, rather than being delivered
+		// on the next tick. `skip_and_mark_missed` and the default policy are the
+		// tick's business, because they need the store.
+		if (record.catchUp === "fold_into_digest") {
+			// The window is chosen once, by the pass that first notices the miss, and
+			// remembered. Re-deriving it from this pass's `now` would move it forward on
+			// every tick: `nextDigestAt` only accepts a candidate at or after `now`, so
+			// a tick one millisecond past the window would pick the following one, and
+			// the next, and the item would never be delivered at all.
+			const pinned = input.foldWindows?.get(record.instanceId);
+			const deliverAt = pinned ?? nextDigestAt(input.now, input.settings, input.tzId);
+			plan.foldWindows.set(record.instanceId, deliverAt);
+			if (deliverAt <= input.now) {
+				plan.digest.push({ record, deliverAt });
+			} else {
+				plan.waiting.push(record);
+				wake(deliverAt);
+			}
 			continue;
 		}
 		plan.catchUp.push(record);
@@ -270,6 +298,8 @@ export interface SnoozeResult {
 export class ScheduleEngine {
 	private readonly records = new Map<string, ReminderRecord>();
 	private readonly recentFires = new Map<string, number>();
+	/** The digest window pinned for each folded catch-up (see `computeDuePlan`). */
+	private foldWindows = new Map<string, number>();
 	private firedIds = new Set<string>();
 	private scheduledPushes = new Set<string>();
 	/** Registrations the provider refused, with the time they may be retried. */
@@ -458,7 +488,11 @@ export class ScheduleEngine {
 			settings: this.options.settings,
 			tzId: this.options.tzId,
 			alreadyFired: this.firedIds,
+			foldWindows: this.foldWindows,
 		});
+		// Rebuilt from the plan, so a record that is no longer a folded catch-up
+		// (delivered, acked, cancelled, or its policy changed) drops its pin.
+		this.foldWindows = plan.foldWindows;
 
 		for (const record of plan.catchUp) {
 			if (record.catchUp === "skip_and_mark_missed") {
@@ -466,11 +500,6 @@ export class ScheduleEngine {
 				record.updatedAt = now;
 				await this.options.store.writeInstance(record);
 				missed.push(record.instanceId);
-				continue;
-			}
-			if (record.catchUp === "fold_into_digest") {
-				const deliverAt = nextDigestAt(now, this.options.settings, this.options.tzId);
-				plan.digest.push({ record, deliverAt });
 				continue;
 			}
 			plan.due.push(record);
@@ -534,6 +563,7 @@ export class ScheduleEngine {
 			settings: this.options.settings,
 			tzId: this.options.tzId,
 			alreadyFired: this.firedIds,
+			foldWindows: this.foldWindows,
 		});
 		return { fired, digested, missed, blockedByLease, nextWakeAt: refreshed.nextWakeAt };
 	}

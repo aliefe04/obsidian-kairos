@@ -80,6 +80,40 @@ describe("ScheduleEngine tick", () => {
 		expect(missedEngine.store.instances.get(id)?.state).toBe("missed");
 	});
 
+	it("holds a catch-up set to fold into a digest until the next window", async () => {
+		// An alarm due at 09:00, missed by fourteen hours. The policy says not to
+		// interrupt late, so it waits for the next window instead of arriving as a
+		// notification the moment the app opens.
+		const reminder = parsedReminder({ dueLocal: DUE_LOCAL });
+		const h = makeEngine({
+			now: DUE + 14 * 60 * 60 * 1000,
+			settings: { catchUpPolicy: "fold_into_digest", digestTimes: "08:00\n18:00" },
+		});
+		await h.engine.sync([reminder]);
+		const id = h.engine.instanceIdOf(reminder);
+
+		const atOpen = await h.engine.tick();
+		expect(atOpen.fired).toEqual([]);
+		expect(atOpen.digested).toEqual([]);
+		expect(h.sent).toEqual([]);
+		// The wake is armed at the window; without it nothing would deliver later.
+		expect(atOpen.nextWakeAt).toBe(Date.UTC(2026, 8, 12, 8, 0));
+
+		// 18:00 has passed by 23:00, so the window is 08:00 the next morning. The tick
+		// lands twenty milliseconds after it, because an interval or a wake timer never
+		// fires exactly on the instant — a plan that re-derived the window from `now`
+		// would pick 18:00 here, then 08:00 tomorrow, and never deliver at all.
+		h.setNow(Date.UTC(2026, 8, 12, 8, 0) + 20);
+		const atWindow = await h.engine.tick();
+		expect(atWindow.digested).toEqual([id]);
+		expect(atWindow.fired).toEqual([]);
+		expect(h.sent).toHaveLength(1);
+		expect(h.sent[0]?.message.severity).toBe("digest");
+		// The policy reclassifies the record, which is what a digest means: it was
+		// delivered as one, so it is recorded as one.
+		expect(h.store.instances.get(id)?.severity).toBe("digest");
+	});
+
 	it("keeps a snoozed predecessor quiet and fires its successor at the new time", async () => {
 		const h = makeEngine({ now: DUE });
 		const reminder = parsedReminder({ dueLocal: DUE_LOCAL });

@@ -176,12 +176,24 @@ it. New entries go at the end.
   `toMinutes` and `parseMinuteList` helpers) is deleted.
 - **Alternatives:** applying quiet hours at delivery time (a second implementation of one rule, and
   the two can disagree — which is what the deleted copy already demonstrated: it had no caller, no
-  test, and a divergent return type, while the parser's copy was deciding every alert); keeping the
-  helper "for reuse" (it was exported, untested, unreachable, and would have looked authoritative to
-  the next contributor).
-- **Consequence:** `severity` is fixed for the life of an instance, so a record cannot change class
-  between the tick that wakes it and the tick that delivers it. The rule is testable through the
-  contract a user sees (`tests/quietHours.test.ts`): both boundaries of a window that wraps midnight
+  test, and a different signature, taking a minutes-of-day number and `KairosSettings` where the live
+  one takes the parsed time and `ParseSettings`, while the parser's copy decided every alert);
+  keeping the helper "for reuse" (it was exported, untested, unreachable, and would have looked
+  authoritative to the next contributor).
+- **Consequence:** quiet hours never reclassify an instance after parsing, so a reminder cannot change
+  class because a later tick happened to run in a different part of the day. The one later
+  reclassification is the user's own catch-up policy: `fold_into_digest` delivers a late item as a
+  digest at the next window and records it as one, which is what the policy means — an alarm missed by
+  fourteen hours is not supposed to interrupt at 23:00. That path is pinned by a test which fails if
+  the window is ignored, because it was ignored: the plan computed `deliverAt` and the delivery loop
+  discarded it, so the folded item arrived as a notification on the tick that opened the app, was
+  marked `notified`, and never reached the window it had been folded into. The window is also pinned by
+  the pass that first notices the miss, because `nextDigestAt` only accepts a candidate at or after
+  `now`: a tick a millisecond past 08:00 would choose 18:00, the next tick 08:00 tomorrow, and the item
+  would never be delivered at all. A test that ticks exactly on the window passes against both versions
+  and proves nothing, so the tests tick just after it, as an interval or wake timer does.
+- **Coverage:** the rule is testable through the contract a user sees
+  (`tests/quietHours.test.ts`): both boundaries of a window that wraps midnight
   (21:59 alarm, 22:00/23:30/00:00/06:59 digest, 07:00 alarm), a window inside one day, off, blank,
   malformed and zero-length windows all leaving an alarm alone, and a digest that is not delivered at
   its due time but is delivered at the next window. Before this, the whole suite and the smoke vault

@@ -7,6 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- A catch-up with the `fold_into_digest` policy is held until the next digest window, and the window is
+  settled once per reminder. It was delivered on the tick that opened the app — a notification at 23:00
+  for a reminder the policy says should not interrupt — and was marked notified at that point, so it
+  never reached the digest it was folded into.
 - A push registration the provider keeps refusing is no longer retried past the reminder's own due
   time. The request would have asked for a delivery in the past, and the alert would never arrive.
 - A phone that stops ringing is now visible: the *Registered channels* line shows the last push pass
@@ -20,10 +24,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Removed
 
-- Three unused exports in `settings.ts` (`isInQuietHours`, `toMinutes`, `parseMinuteList`), which
-  restated rules the parser and the engine already implement. Quiet hours is applied in one place, at
-  parse time, and is covered by boundary tests (`tests/quietHours.test.ts`); before that, the whole
-  suite ran with quiet hours off and a regression there would have downgraded alarms in silence.
+- Four unused exports in `settings.ts`. `isInQuietHours` and `parseMinuteList` restated rules that the
+  parser and the engine already implement, and `toMinutes` and `splitLines` existed only to serve them.
+  Quiet hours is applied in one place, at parse time, and is covered by boundary tests
+  (`tests/quietHours.test.ts`); before that, the whole suite and the smoke vault ran with quiet hours
+  off, so a regression there would have downgraded alarms in silence.
 
 ## [0.1.0] — not yet released
 

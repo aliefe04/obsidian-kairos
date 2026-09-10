@@ -47,8 +47,9 @@ function severityAt(time: string, settings: Partial<ParseInput["settings"]> = {}
 
 describe("quiet hours decide severity", () => {
 	it("splits exactly at both ends of a window that wraps midnight", () => {
-		// The window is 22:00 → 07:00, so it wraps. Both boundaries are exclusive
-		// at the start and inclusive at the end of the quiet side.
+		// The window wraps midnight. The rule is half-open: the start is inclusive and
+		// the end is exclusive, so 22:00 is already quiet and 07:00 is not. A window
+		// whose bounds are equal covers nothing.
 		expect(severityAt("21:59")).toBe("alarm");
 		expect(severityAt("22:00")).toBe("digest");
 		expect(severityAt("23:30")).toBe("digest");
@@ -92,8 +93,10 @@ describe("a digest reminder waits for a window", () => {
 		expect(atDue.digested).toEqual([]);
 		expect(h.sent).toEqual([]);
 
-		// 18:00 has already passed at 23:30, so the next window is 08:00 tomorrow.
-		const window = Date.UTC(2026, 8, 11, 8, 0);
+		// 18:00 has already passed at 23:30, so the next window is 08:00 tomorrow. The
+		// tick lands just after it, as a real one does; an interval or a wake timer
+		// never fires exactly on the instant.
+		const window = Date.UTC(2026, 8, 11, 8, 0) + 20;
 		h.setNow(window);
 		const atWindow = await h.engine.tick(window);
 		expect(atWindow.digested).toHaveLength(1);

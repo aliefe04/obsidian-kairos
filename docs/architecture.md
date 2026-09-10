@@ -58,7 +58,10 @@ Three properties are load-bearing:
 - **Severity is decided once, when the note is parsed.** Quiet hours are applied to the time written in
   the note (`parseNote`), and the outcome is stored on the record, so an item due at 23:30 is a digest
   from the moment the file is read. There is exactly one implementation of that rule and it is
-  boundary-tested; a delivery-time copy is how the two drift apart.
+  boundary-tested; a delivery-time copy is how the two drift apart. The only later reclassification is
+  the user's own catch-up policy — `fold_into_digest` delivers a late item as a digest at the next
+  window and records it as one — and `eslint` keeps `obsidian` and `settings.ts` out of `src/parse/`
+  so the rule cannot silently move back into the settings module.
 - **Mobile parity in the type system, not in prose.** No module may import `electron` outside
   `channels/desktop.ts`, and that module guards on `Platform.isMobileApp`.
 
@@ -123,6 +126,11 @@ The rule covers defaults too. The smoke vault pins the plugin's settings and ass
 relies on them, because the production defaults fold an alarm inside quiet hours (22:00 → 07:00) into
 the next digest: a harness that writes a note two minutes in the past passed at 21:24 and reported
 "fired: 0" at 22:02 with the same code.
+
+It also covers boundaries: a test that lands exactly on a window or a due time proves less than one
+that lands just after it. Every boundary test in this repository advances to the instant plus a few
+milliseconds, because an interval and a wake timer never fire exactly on the instant, and a lookup that
+returns the *next* candidate — `nextDigestAt` — behaves differently in those two cases.
 
 ## 8. Known platform limits the architecture accepts
 
