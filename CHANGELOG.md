@@ -5,16 +5,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-### Fixed
+## [0.1.0] — 2026-09-10
 
-- A catch-up with the `fold_into_digest` policy is held until the next digest window, and the window is
-  settled once per reminder. It was delivered on the tick that opened the app — a notification at 23:00
-  for a reminder the policy says should not interrupt — and was marked notified at that point, so it
-  never reached the digest it was folded into.
-- A push registration the provider keeps refusing is no longer retried past the reminder's own due
-  time. The request would have asked for a delivery in the past, and the alert would never arrive.
-- A phone that stops ringing is now visible: the *Registered channels* line shows the last push pass
-  (`push scheduling: 3 sent, 1 failed, 1 deferred`) and so does **Copy diagnostics**.
+The first version. Built and tested against Obsidian 1.13.7 on macOS. It is not in the community
+plugin directory yet: install it from this release, or with BRAT (`aliefe04/obsidian-kairos`).
+
+### Added
+
+- **Reminder syntax from the note itself.** A bare time in a date-scoped note
+  (`- [ ] msg to dentist 09:00`) alerts at that time on that note's date. Start-of-line times, `at`
+  prefixes, explicit `@ 2026-09-11 09:00` forms, and the existing `⏰` and `(@…)` forms of other
+  plugins are read as well.
+- **The date cascade**: frontmatter, H1, nearest preceding date heading, file name formats including
+  `YYYY/DD-MM-YYYY-dddd`, and the Daily Notes folder cross-check. An ambiguous file name such as
+  `08-09-2026` is refused and reported instead of guessed.
+- **A scheduling engine** with one recomputed next-wake timer, deterministic instance identity,
+  a per-device lease with fencing, a 60-second dedupe window, and per-reminder catch-up policy.
+- **Two severities**: `alarm` interrupts, `digest` batches at a configured window. Quiet hours turn a
+  reminder written inside them into a digest item.
+- **Delivery channels**: desktop OS notification with an alert window (Done, Snooze, Open note), ntfy
+  server-side scheduled push, and an RFC 5545 `.ics` export for a calendar application.
+- **A searchable settings tab** using the Obsidian 1.13 declarative settings API.
+- **An agenda view**: today, tomorrow, the next seven days, and overdue.
+- **Commands**: open agenda, add reminder, rescan vault, copy diagnostics, test notification.
+- **Locale packs** for `en` and `tr`, as data files rather than a dependency.
+- **A real-application test harness** (`npm run smoke`) that drives Obsidian over the Chrome DevTools
+  Protocol and asserts the parsed schedule, the exactly-once guarantee, and the rendered alert text.
 
 ### Changed
 
@@ -30,32 +46,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   (`tests/quietHours.test.ts`); before that, the whole suite and the smoke vault ran with quiet hours
   off, so a regression there would have downgraded alarms in silence.
 
-## [0.1.0] — not yet released
+### Fixed
 
-The first version. It is built and tested on this machine against Obsidian 1.13.7, but it is not in
-the community plugin directory yet.
-
-### Added
-
-- **Reminder syntax from the note itself.** A bare time in a date-scoped note
-  (`- [ ] msg to dentist 09:00`) alerts at that time on that note's date. Start-of-line times, `at`
-  prefixes, explicit `@ 2026-09-11 09:00` forms, and the existing `⏰` and `(@…)` forms of other
-  plugins are read as well.
-- **The date cascade**: frontmatter, H1, nearest preceding date heading, file name formats including
-  `YYYY/DD-MM-YYYY-dddd`, and the Daily Notes folder cross-check. An ambiguous file name such as
-  `08-09-2026` is refused and reported instead of guessed.
-- **A scheduling engine** with one recomputed next-wake timer, deterministic instance identity,
-  a per-device lease with fencing, a 60-second dedupe window, and per-reminder catch-up policy.
-- **Two severities**: `alarm` interrupts, `digest` batches at a configured window. Quiet hours fold
-  alarms into the next digest.
-- **Delivery channels**: desktop OS notification with an alert window (Done, Snooze, Open note), ntfy
-  server-side scheduled push, and an RFC 5545 `.ics` export for a calendar application.
-- **A searchable settings tab** using the Obsidian 1.13 declarative settings API.
-- **An agenda view**: today, tomorrow, the next seven days, and overdue.
-- **Commands**: open agenda, add reminder, rescan vault, copy diagnostics, test notification.
-- **Locale packs** for `en` and `tr`, as data files rather than a dependency.
-- **A real-application test harness** (`npm run smoke`) that drives Obsidian over the Chrome DevTools
-  Protocol and asserts the parsed schedule, the exactly-once guarantee, and the rendered alert text.
+- A catch-up with the `fold_into_digest` policy is held until the next digest window, and the window is
+  settled once per reminder. It was delivered on the tick that opened the app — a notification at 23:00
+  for a reminder the policy says should not interrupt — and was marked notified at that point, so it
+  never reached the digest it was folded into.
+- A push registration the provider keeps refusing is no longer retried past the reminder's own due
+  time. The request would have asked for a delivery in the past, and the alert would never arrive.
+- A phone that stops ringing is now visible: the *Registered channels* line shows the last push pass
+  (`push scheduling: 3 sent, 1 failed, 1 deferred`) and so does **Copy diagnostics**.
 
 ### Security
 

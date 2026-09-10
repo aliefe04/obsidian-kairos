@@ -46,16 +46,22 @@ Interoperability, all read-only except where noted:
 
 ## Install
 
-Manual, from a release (`kairos.zip`, or the loose `main.js` and `manifest.json`):
+With **BRAT** (recommended — it also updates itself):
+
+1. Install and enable **BRAT** from Obsidian's community plugin list.
+2. In BRAT: **Add Beta plugin** → `aliefe04/obsidian-kairos`.
+3. Enable **Kairos** in Settings → Community plugins.
+
+Manually, from a release (`kairos.zip`, or the loose `main.js` and `manifest.json`):
 
 1. Copy `main.js` and `manifest.json` into `<vault>/.obsidian/plugins/kairos/`.
 2. Enable Kairos in Settings → Community plugins.
 
-The release packaging step also copies `styles.css` when the repository has one; Kairos currently
-ships none, and `npm run build` emits `main.js` only.
+A manual copy does not update itself; copy the files again after a new release. The release packaging
+step also copies `styles.css` when the repository has one; Kairos currently ships none, and
+`npm run build` emits `main.js` only.
 
-BRAT: add the repository `aliefe04/obsidian-kairos` and install the plugin (beta) from BRAT's
-command palette entries.
+It is not in the community plugin directory yet.
 
 Requires Obsidian 1.13.0. Desktop and mobile bundles are the same; the mobile app has no OS
 notification API available to plugins, so the desktop channel degrades to an in-app notice there.

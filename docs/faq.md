@@ -1,5 +1,15 @@
 # Frequently asked questions
 
+## How do I install and update it?
+
+Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from Obsidian's community plugin list,
+then use **Add Beta plugin** with `aliefe04/obsidian-kairos`. BRAT reads this repository's releases
+and can update the plugin for you — *Check for updates to all beta plugins* in its settings.
+
+If you copied `main.js` and `manifest.json` into `.obsidian/plugins/kairos/` yourself, nothing updates
+it: copy both files again after each release, then reload Obsidian. The plugin is not in the community
+plugin directory yet.
+
 ## Will it alert me when my phone is locked?
 
 It depends on which channel you configured.
