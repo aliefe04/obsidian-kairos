@@ -103,3 +103,19 @@ npm run smoke      # real Obsidian against .testvault over CDP (macOS: /Applicat
 
 The specs are in `docs/spec/syntax.md` (what is written in a note) and `docs/spec/state-model.md`
 (instances, scheduling, storage and sync). Recorded design decisions are in `docs/decisions.md`.
+
+## Documentation
+
+| Document | Content |
+|---|---|
+| `CONTEXT.md` | The words this project uses, and the words it avoids. Start here. |
+| `CONTRIBUTING.md` | Build, test, and the four contribution lanes (channel, locale, recipe, test) |
+| `CHANGELOG.md` | What changed, and what is known to be limited |
+| `SECURITY.md` | Private reporting, and what counts as in scope |
+| `CODE_OF_CONDUCT.md` | Contributor Covenant 2.1 |
+| `docs/PLAN.md` | The plan: the job, the advantage, the roadmap, the metrics |
+| `docs/market.md` | The competing plugins, and the defects they report |
+| `docs/delivery.md` | How an alert reaches a person, and what each tier requires |
+| `docs/architecture.md` | Modules, invariants, testing, and the rejected dependencies |
+| `docs/risks.md` | The risk register, and the questions that are still open |
+| `docs/spec/` | The two frozen contracts |
