@@ -105,7 +105,7 @@ an owned, reviewed app on two stores, and it re-solves a problem ntfy/Bark alrea
 | Due while closed, > `grace`, user policy `fire_now_with_age` (**default**) | Fire on launch with the age in the text ("09:00 — 2 h ago") |
 | Same, policy `fold_into_digest` | Deferred to the next digest window (default 08:00 / 18:00) |
 | Same, policy `skip_and_mark_missed` | No alert; the record is marked missed and visible in the agenda view |
-| Inside quiet hours | Folded into the next digest, always — even for alarms |
+| Inside quiet hours (decided when the note is parsed, from the time written) | Folded into the next digest, always — even for alarms |
 | Alert fires on two devices at once | The lease decides; the loser receives nothing and records nothing |
 
 The default is deliberate: a late alert is recoverable, a silently dropped one is not.

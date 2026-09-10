@@ -5,6 +5,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- A push registration the provider keeps refusing is no longer retried past the reminder's own due
+  time. The request would have asked for a delivery in the past, and the alert would never arrive.
+- A phone that stops ringing is now visible: the *Registered channels* line shows the last push pass
+  (`push scheduling: 3 sent, 1 failed, 1 deferred`) and so does **Copy diagnostics**.
+
+### Changed
+
+- The smoke harness pins the plugin's settings before it relies on them. It expected an alarm from a
+  note written two minutes in the past, which the default quiet hours fold into a digest between
+  22:00 and 07:00 — the same code passed at 21:24 and reported nothing fired at 22:02.
+
+### Removed
+
+- Three unused exports in `settings.ts` (`isInQuietHours`, `toMinutes`, `parseMinuteList`), which
+  restated rules the parser and the engine already implement. Quiet hours is applied in one place, at
+  parse time, and is covered by boundary tests (`tests/quietHours.test.ts`); before that, the whole
+  suite ran with quiet hours off and a regression there would have downgraded alarms in silence.
+
 ## [0.1.0] — not yet released
 
 The first version. It is built and tested on this machine against Obsidian 1.13.7, but it is not in

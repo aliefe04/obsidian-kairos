@@ -1,6 +1,4 @@
 import { PluginSettingTab, type App, type Plugin, type SettingDefinition, type SettingDefinitionItem } from "obsidian";
-import type { Hm } from "./parse/timeTokens";
-import { parseHm } from "./parse/timeTokens";
 import { listLocaleTags } from "./parse/locales/index";
 
 export type CatchUpPolicy = "fire_now_with_age" | "fold_into_digest" | "skip_and_mark_missed";
@@ -104,47 +102,6 @@ export const DEFAULT_SETTINGS: KairosSettings = {
 const CATCH_UP_POLICIES: CatchUpPolicy[] = ["fire_now_with_age", "fold_into_digest", "skip_and_mark_missed"];
 const SEVERITIES: Severity[] = ["alarm", "digest"];
 const STATE_LOCATIONS: StateLocation[] = ["plugin-dir", "vault-folder"];
-
-export function splitLines(value: string): string[] {
-	return value
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0);
-}
-
-/** Digest windows and quiet-hour bounds, as minutes since local midnight. */
-export function parseMinuteList(value: string): number[] {
-	const minutes: number[] = [];
-	for (const line of splitLines(value)) {
-		const time = parseHm(line);
-		if (time) {
-			minutes.push(time.hour * 60 + time.minute);
-		}
-	}
-	return [...new Set(minutes)].sort((a, b) => a - b);
-}
-
-export function toMinutes(time: Hm): number {
-	return time.hour * 60 + time.minute;
-}
-
-/** Quiet hours may wrap midnight (`22:00` → `07:00`). */
-export function isInQuietHours(minutesOfDay: number, settings: KairosSettings): boolean {
-	if (!settings.quietHoursEnabled) {
-		return false;
-	}
-	const start = parseHm(settings.quietHoursStart);
-	const end = parseHm(settings.quietHoursEnd);
-	if (!start || !end) {
-		return false;
-	}
-	const from = toMinutes(start);
-	const to = toMinutes(end);
-	if (from === to) {
-		return false;
-	}
-	return from < to ? minutesOfDay >= from && minutesOfDay < to : minutesOfDay >= from || minutesOfDay < to;
-}
 
 function coerceBoolean(value: unknown, fallback: boolean): boolean {
 	return typeof value === "boolean" ? value : fallback;

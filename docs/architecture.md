@@ -55,6 +55,10 @@ Three properties are load-bearing:
 - **Completed is terminal.** Any status character in the configured completing set cancels the
   instance before delivery.
 - **A lease never causes silence.** Unreadable lease → fire locally.
+- **Severity is decided once, when the note is parsed.** Quiet hours are applied to the time written in
+  the note (`parseNote`), and the outcome is stored on the record, so an item due at 23:30 is a digest
+  from the moment the file is read. There is exactly one implementation of that rule and it is
+  boundary-tested; a delivery-time copy is how the two drift apart.
 - **Mobile parity in the type system, not in prose.** No module may import `electron` outside
   `channels/desktop.ts`, and that module guards on `Platform.isMobileApp`.
 
@@ -106,7 +110,7 @@ main community growth lane.
 
 | Layer | Tool | Gate |
 |---|---|---|
-| Pure logic (tokens, cascade, engine, ICS, ntfy payload) | vitest, injected clock and in-memory state store | every push; 75 tests today |
+| Pure logic (tokens, cascade, engine, ICS, ntfy payload, severity) | vitest, injected clock and in-memory state store | every push; 100 tests in 12 files today |
 | Review guidelines | `eslint-plugin-obsidianmd` | every push, zero warnings tolerated |
 | Types | `tsc --noEmit` strict with `noUncheckedIndexedAccess` | every push |
 | Real app | `scripts/smoke.mjs` — launches real Obsidian with an isolated profile and a throwaway vault, drives it over CDP, asserts the parsed schedule and the fired log | before every release, and after any change to parsing, scheduling or delivery |
@@ -114,6 +118,11 @@ main community growth lane.
 
 Determinism rule: no test may depend on the wall clock or the host timezone. Time is injected; zone
 tests name their zone explicitly. `zoneinfo`-style sweeps caught the DST defect in Phase 0.
+
+The rule covers defaults too. The smoke vault pins the plugin's settings and asserts them before it
+relies on them, because the production defaults fold an alarm inside quiet hours (22:00 → 07:00) into
+the next digest: a harness that writes a note two minutes in the past passed at 21:24 and reported
+"fired: 0" at 22:02 with the same code.
 
 ## 8. Known platform limits the architecture accepts
 

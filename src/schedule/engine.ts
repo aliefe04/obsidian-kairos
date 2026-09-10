@@ -180,10 +180,8 @@ export function computeDuePlan(input: DuePlanInput): DuePlan {
 		// `lead` before the due time so this device can claim the lease, and the
 		// alert itself lands at `due` (spec §3). Re-waking at an `armAt` that is
 		// already in the past would spin the timer, so inside the window we wake
-		// at `due`.
-		// The window opens `lead` before the due time and the claim is renewed on
-		// every pass while it is open, so a lead longer than the lease TTL still
-		// reserves the alarm.
+		// at `due`. The claim is renewed on every pass while the window is open, so
+		// a lead longer than the lease TTL still reserves the alarm.
 		const armAt = due - leadMs;
 		if (input.now < armAt) {
 			plan.waiting.push(record);

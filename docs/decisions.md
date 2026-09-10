@@ -167,3 +167,28 @@ it. New entries go at the end.
   without rebuilding the engine. Six tests pin the horizon and the backoff ladder, including that a
   jump of exactly the cap length retries and that an instance which leaves the index stops being
   tracked.
+
+## 13. Quiet hours are applied at parse time, by one implementation
+
+- **Decision:** quiet hours are read from the time written in the note, applied while the note is
+  parsed (`parseNote`), and the outcome is stored on the record as `severity`. The delivery side
+  never re-derives it. The unused copy of that rule in `settings.ts` (`isInQuietHours`, along with its
+  `toMinutes` and `parseMinuteList` helpers) is deleted.
+- **Alternatives:** applying quiet hours at delivery time (a second implementation of one rule, and
+  the two can disagree — which is what the deleted copy already demonstrated: it had no caller, no
+  test, and a divergent return type, while the parser's copy was deciding every alert); keeping the
+  helper "for reuse" (it was exported, untested, unreachable, and would have looked authoritative to
+  the next contributor).
+- **Consequence:** `severity` is fixed for the life of an instance, so a record cannot change class
+  between the tick that wakes it and the tick that delivers it. The rule is testable through the
+  contract a user sees (`tests/quietHours.test.ts`): both boundaries of a window that wraps midnight
+  (21:59 alarm, 22:00/23:30/00:00/06:59 digest, 07:00 alarm), a window inside one day, off, blank,
+  malformed and zero-length windows all leaving an alarm alone, and a digest that is not delivered at
+  its due time but is delivered at the next window. Before this, the whole suite and the smoke vault
+  ran with quiet hours off, so a regression would have downgraded alarms in silence — which is how it
+  was found: the smoke alarm stopped interrupting at 22:02 and started again the next morning.
+- **Known limit:** a record keeps the severity it was parsed with. Changing the window affects records
+  created after the next parse of their note, and `Rescan vault` re-parses everything; a settings
+  change alone does not. The candidates are to re-derive on a parse-affecting settings change (a full
+  vault pass on each such change, or a targeted one) or to move the rule to delivery time, which
+  contradicts the decision above unless the parse-time copy is removed in the same change.
