@@ -125,14 +125,16 @@ export function createDesktopChannel(options: DesktopChannelOptions): DeliveryCh
 			try {
 				const notification = new notify({ title: message.title, body: messageSummary(message), silent: !ctx.settings.desktopSound });
 				notification.onclick = () => {
-					if (showModal) {
-						new AlertModal(options.app, message, ctx).open();
-						return;
-					}
 					ctx.openInstance(message.instanceId);
 				};
 				notification.show();
-				return { ok: true, detail: "os notification" };
+				// The setting promises a window with Done, Snooze and Open note for due
+				// alarms, so it opens with the notification rather than only when the
+				// notification happens to be clicked.
+				if (showModal) {
+					new AlertModal(options.app, message, ctx).open();
+				}
+				return { ok: true, detail: showModal ? "os notification + alert window" : "os notification" };
 			} catch (error) {
 				new Notice(text, 0);
 				return { ok: false, detail: describeError(error) };

@@ -176,33 +176,56 @@ async function main() {
 
 		const now = new Date();
 		const pad = (value) => String(value).padStart(2, "0");
+		const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 		// A reminder two minutes in the past exercises the path a user actually
 		// hits most often: Obsidian was closed when the alert was due, so the
 		// launch-time catch-up has to deliver it instead of dropping it.
 		const past = new Date(now.getTime() - 2 * 60 * 1000);
 		const wall = `${pad(past.getHours())}:${pad(past.getMinutes())}`;
 		const iso = `${past.getFullYear()}-${pad(past.getMonth() + 1)}-${pad(past.getDate())}`;
-		const notePath = `journal/${past.getFullYear()}/${pad(past.getDate())}-${pad(past.getMonth() + 1)}-${past.getFullYear()}-smoke.md`;
-		const body = `# ${iso}\n\n- [ ] smoke test ${wall}\n`;
-		await cdp.evaluate(
+		// The note is named the way the vault's daily notes are named (folder and
+		// `YYYY/DD-MM-YYYY-dddd` format from `.obsidian/daily-notes.json`) and the
+		// body carries no H1 date, so the date-resolution path under test is the
+		// production one rather than a spelling only the harness uses.
+		const notePath = `journal/${past.getFullYear()}/${pad(past.getDate())}-${pad(past.getMonth() + 1)}-${past.getFullYear()}-${weekdays[past.getDay()]}.md`;
+		const body = `- [ ] smoke test ${wall}\n`;
+		const cachedItems = await cdp.evaluate(
 			`(async () => {
 				const path = ${JSON.stringify(notePath)};
 				const folder = path.split("/").slice(0, -1).join("/");
-				if (!(await app.vault.adapter.exists(folder))) { await app.vault.adapter.mkdir(folder); }
-				await app.vault.adapter.write(path, ${JSON.stringify(body)});
-				await new Promise((resolve) => setTimeout(resolve, 1500));
+				if (!(await app.vault.adapter.exists(folder))) { await app.vault.createFolder(folder); }
+				const existing = app.vault.getAbstractFileByPath(path);
+				if (existing) { await app.vault.modify(existing, ${JSON.stringify(body)}); }
+				else { await app.vault.create(path, ${JSON.stringify(body)}); }
+				// scanAll() skips any file whose cached metadata carries no list
+				// items, so the checkbox has to be indexed before the rescan runs.
+				const deadline = Date.now() + 10000;
+				let cached = 0;
+				for (;;) {
+					const file = app.vault.getAbstractFileByPath(path);
+					const cache = file ? app.metadataCache.getFileCache(file) : null;
+					const items = cache && Array.isArray(cache.listItems) ? cache.listItems : [];
+					if (items.some((item) => item && item.task !== undefined)) { cached = items.length; break; }
+					if (Date.now() > deadline) { break; }
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				}
 				await app.plugins.plugins.kairos.rescan();
 				await app.plugins.plugins.kairos.tickNow();
-				return true;
+				return cached;
 			})()`,
 		);
 		report.note = { path: notePath, body };
-		report.steps.push({ step: "dated note created, index rescanned, tick forced", ok: true });
+		report.noteCacheItems = cachedItems;
+		report.steps.push({
+			step: "daily note created through the vault API, indexed, rescanned, tick forced",
+			ok: typeof cachedItems === "number" && cachedItems > 0,
+		});
 
 		const fired = await cdp.evaluate(`(async () => {
 			const root = app.plugins.plugins.kairos.manifest.dir + "/state/fired";
 			if (!(await app.vault.adapter.exists(root))) { return { lines: 0, matching: 0, last: null }; }
 			const listing = await app.vault.adapter.list(root);
+			const smokeNote = ${JSON.stringify(notePath)};
 			let lines = 0;
 			let matching = 0;
 			let last = null;
@@ -212,7 +235,7 @@ async function main() {
 					if (line.trim().length === 0) { continue; }
 					lines += 1;
 					last = JSON.parse(line);
-					if (String(last.sourcePath ?? "").includes("smoke")) { matching += 1; }
+					if (String(last.sourcePath ?? "") === smokeNote) { matching += 1; }
 				}
 			}
 			return { lines, matching, last };
@@ -223,7 +246,7 @@ async function main() {
 		// common complaint in this market, and a loose `> 0` assertion cannot see it.
 		report.steps.push({ step: "it fired exactly once", ok: fired.matching === 1 });
 		const logged = fired.last ?? {};
-		const scheduleMatched = String(logged.sourcePath ?? "").includes("smoke") && logged.dueLocal === `${iso}T${wall}`;
+		const scheduleMatched = String(logged.sourcePath ?? "") === notePath && logged.dueLocal === `${iso}T${wall}`;
 		report.steps.push({ step: "the logged instance carries the parsed note date and bare time", ok: scheduleMatched });
 
 		const noticeTexts = await cdp.evaluate(`Array.from(document.querySelectorAll(".notice")).map((el) => String(el.textContent || ""))`);

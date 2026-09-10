@@ -35,6 +35,8 @@ export interface ReminderRecord {
 	catchUp: KairosSettings["catchUpPolicy"];
 	state: ReminderState;
 	snoozeCount: number;
+	/** Instance id this record took over from, when it was born from a snooze. */
+	supersedes?: string;
 	lease?: Lease;
 	firedBy: string[];
 	firstSeenAt: number;
@@ -179,6 +181,9 @@ export function computeDuePlan(input: DuePlanInput): DuePlan {
 		// alert itself lands at `due` (spec §3). Re-waking at an `armAt` that is
 		// already in the past would spin the timer, so inside the window we wake
 		// at `due`.
+		// The window opens `lead` before the due time and the claim is renewed on
+		// every pass while it is open, so a lead longer than the lease TTL still
+		// reserves the alarm.
 		const armAt = due - leadMs;
 		if (input.now < armAt) {
 			plan.waiting.push(record);
@@ -299,11 +304,30 @@ export class ScheduleEngine {
 		}
 		const seen = new Set<string>();
 		const indexedPaths = new Set<string>();
+		// Instances a live snooze successor has taken over. The note still carries
+		// the old time, so the index keeps offering it; it has to stay inert instead
+		// of firing alongside its successor.
+		const superseded = new Set<string>();
+		for (const record of this.records.values()) {
+			if (record.supersedes !== undefined) {
+				superseded.add(record.supersedes);
+			}
+		}
 		const result: SyncResult = { created: 0, updated: 0, cancelled: 0 };
 		for (const reminder of parsed) {
 			const instanceId = this.instanceIdOf(reminder);
 			seen.add(instanceId);
 			indexedPaths.add(reminder.sourcePath);
+			const stale = superseded.has(instanceId) ? this.records.get(instanceId) : undefined;
+			if (stale !== undefined) {
+				if (stale.state !== "snoozed") {
+					stale.state = "snoozed";
+					stale.updatedAt = now;
+					await this.options.store.writeInstance(stale);
+					result.updated += 1;
+				}
+				continue;
+			}
 			const existing = this.records.get(instanceId);
 			if (existing) {
 				const titleHash = buildTitleHash(reminder.title, this.options.hash);
@@ -333,7 +357,7 @@ export class ScheduleEngine {
 				utcOffsetMinutes: Number.isFinite(due) ? offsetMinutesAt(zone, due) : 0,
 				severity: reminder.severity,
 				catchUp: this.options.settings.catchUpPolicy,
-				state: "scheduled",
+				state: superseded.has(instanceId) ? "snoozed" : "scheduled",
 				snoozeCount: 0,
 				firedBy: [],
 				firstSeenAt: now,
@@ -351,13 +375,19 @@ export class ScheduleEngine {
 			// until the note is rewritten, so while its source note still exists it
 			// is owned by state rather than by the note and must not be cancelled
 			// here (spec §5).
-			const bornFromSnooze = record.snoozeCount > 0 && indexedPaths.has(record.sourcePath);
+			const bornFromSnooze = record.supersedes !== undefined && indexedPaths.has(record.sourcePath);
 			if ((record.state === "scheduled" || record.state === "armed") && !bornFromSnooze) {
 				record.state = "cancelled";
 				record.updatedAt = now;
 				await this.options.store.writeInstance(record);
 				await this.clearPush(record.instanceId);
 				result.cancelled += 1;
+				continue;
+			}
+			// A superseded predecessor whose old time has left the note can never be
+			// re-created, so it is dropped rather than kept inert forever.
+			if (record.state === "snoozed" && record.supersedes === undefined) {
+				this.records.delete(record.instanceId);
 				continue;
 			}
 			// A snoozed instance outlives the line it came from: the new time only
@@ -447,16 +477,17 @@ export class ScheduleEngine {
 		}
 
 		for (const record of plan.arming) {
-			if (record.state === "armed") {
-				continue;
-			}
 			if (this.suppressed(record.instanceId, now)) {
 				continue;
 			}
+			// Claimed, or renewed, on every pass: the arming window can be longer
+			// than the lease TTL, and the claim has to still be ours at `due`.
 			const claimed = await this.claimLease(record.instanceId, now);
-			record.state = "armed";
-			record.updatedAt = now;
-			await this.options.store.writeInstance(record);
+			if (record.state !== "armed") {
+				record.state = "armed";
+				record.updatedAt = now;
+				await this.options.store.writeInstance(record);
+			}
 			if (!claimed) {
 				blockedByLease.push(record.instanceId);
 			}
@@ -471,7 +502,9 @@ export class ScheduleEngine {
 			}
 			const claimed = await this.claimLease(record.instanceId, now);
 			if (!claimed) {
-				record.state = "armed";
+				// Another device holds the claim. "armed" means "we own it and are
+				// waiting for the due time" (spec §3), so a refusal leaves the record
+				// eligible and it is retried on the next tick instead.
 				record.updatedAt = now;
 				await this.options.store.writeInstance(record);
 				blockedByLease.push(record.instanceId);
@@ -633,6 +666,7 @@ export class ScheduleEngine {
 			utcOffsetMinutes: Number.isFinite(due) ? offsetMinutesAt(zone, due) : record.utcOffsetMinutes,
 			state: "scheduled",
 			snoozeCount: record.snoozeCount + 1,
+			supersedes: instanceId,
 			firedBy: [],
 			firstSeenAt: now,
 			updatedAt: now,
@@ -727,9 +761,10 @@ export function noteNameOf(sourcePath: string): string {
 }
 
 export function messageSummary(message: OutboundMessage): string {
-	// The title leads: an alert that says "09:00 · 2 min late · 10-09-2026-Friday"
-	// tells the user nothing about what they are being reminded to do.
-	const parts = [message.title.length > 0 ? message.title : "Reminder", message.dueLocal.slice(11)];
+	// Deliberately title-free: every surface composes the title separately (the
+	// notification's own title, the modal heading, the ntfy X-Title), so putting it
+	// here would print it twice on each of them.
+	const parts = [message.dueLocal.slice(11)];
 	if (message.ageMinutes >= 1) {
 		parts.push(ageOf(message.ageMinutes));
 	}

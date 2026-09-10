@@ -99,12 +99,47 @@ it. New entries go at the end.
   times, and the original `fired.lines > 0` assertion could not see it. The harness now asserts
   `matching === 1` and exactly one delivery notice, so the regression cannot return silently.
 
-## 9. The alert text leads with the task title
+## 9. `messageSummary()` stays title-free; each surface composes the title once
 
-- **Decision:** `messageSummary()` emits `title · HH:mm · age · note name`. The desktop channel uses
-  that string as-is instead of prefixing the title again.
-- **Alternatives:** keeping `HH:mm · age · note name` (which is what shipped first) and letting the
-  OS notification's own title field carry the task.
-- **Consequence:** the in-app notice is self-contained — "call the dentist · 21:13 · 1 min late" —
-  and the mobile fallback path no longer duplicates the title. Found by reading the real notice text
-  out of the smoke run rather than by asserting a string in a unit test.
+- **Decision:** `messageSummary()` emits `HH:mm · age · note name` and never the title. The title is
+  composed where a surface has no title of its own — the delivery notice in `main.ts`, the ntfy
+  `X-Title`, the notification's `title` field, the modal heading.
+- **Alternatives:** putting the title inside the summary (tried first, reverted). It reads well in
+  the notice and prints the task twice everywhere else: the desktop channel renders
+  `${title} · ${summary}` in its fallback text, the OS notification carries the title as `title` and
+  the summary as `body`, and the modal shows a heading plus the summary paragraph.
+- **Consequence:** the notice reads `call the dentist · 21:13 · 1 min late · 10-09-2026-Friday` while
+  the notification and the window each show the task exactly once. No test pinned the old format, so
+  the duplication would have shipped silently on three surfaces — it was caught by reading the real
+  notice out of the smoke run. `docs/PLAN.md` §10 records it.
+
+## 10. A snooze successor owns its time through `supersedes`, not through a counter
+
+- **Decision:** `snooze()` writes the predecessor as `snoozed` and gives the successor
+  `supersedes: <predecessorId>`. `sync()` derives a `superseded` set from those links; an
+  index-derived instance in that set is forced to `snoozed` so it can never fire beside its
+  successor. A `snoozed` record that is absent from the index is pruned, because its old time has
+  left the note and nothing can re-create it. `snoozed` rows are hidden from the agenda and from the
+  `.ics` export.
+- **Alternatives:** `snoozeCount > 0` as the marker (it is also the user-visible tally, and an
+  annotate-mode re-parse produces a fresh count-0 record while the old one is spared, so both stay
+  live); always rewriting the note (intrusive by default, and impossible to express across midnight);
+  keeping predecessors forever (every snooze would leave an inert instance file that the tick
+  re-iterates).
+- **Consequence:** snoozing is durable with annotation off — the default — and the note keeps saying
+  the original time while the state-owned successor fires at the new one. Two follow-on rules came
+  out of the same review: the in-note rewrite is skipped when the snooze crosses midnight (writing
+  `00:20` under yesterday's date would re-parse as a different, already-past instance and alert a
+  second time), and the arming window renews its claim on every pass instead of shortening the
+  user's `leadMinutes` to fit the 5-minute lease TTL.
+
+## 11. A refused claim leaves the record eligible
+
+- **Decision:** `armed` means "this device holds the claim and is waiting for `due`" (spec §3). When
+  another device owns the claim the record stays `scheduled`, is reported in `TickResult.blockedByLease`,
+  and is retried on the next tick.
+- **Alternatives:** marking a refusal as `armed` (what shipped first — it made one state mean both
+  "we own it" and "we lost it", so no test could assert either), or as `notified` (which would go
+  silent and never fire even after the other device released the claim).
+- **Consequence:** cross-device arbitration is observable and testable: `blockedByLease` is the signal,
+  and the losing device still fires if the winner never does.

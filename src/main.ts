@@ -69,7 +69,9 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 			clearScheduled: (instanceId) => this.registry.clearInstance(instanceId, this.channelContext()),
 			onDeliver: (record, message) => {
 				if (record.severity === "alarm" && message.actions) {
-					new Notice(messageSummary(message), 5000);
+					// The summary is deliberately title-free, so the title is composed
+					// here — once, on the one surface that has no title of its own.
+					new Notice(`${message.title} · ${messageSummary(message)}`, 5000);
 				}
 			},
 		});
@@ -211,7 +213,8 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 		}
 		return engine
 			.snapshot()
-			.filter((record) => record.state === "scheduled" || record.state === "armed" || record.state === "snoozed")
+			// A superseded predecessor must not become a calendar event either.
+			.filter((record) => record.state === "scheduled" || record.state === "armed")
 			.map((record) => ({
 				uid: record.instanceId,
 				title: record.title,
@@ -348,6 +351,14 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 			await this.tickNow();
 			return;
 		}
+		// A snooze that crosses midnight cannot be written as a bare time token in a
+		// note dated the previous day: "23:50 + 30 min" would be written as 00:20
+		// under yesterday's date, which re-parses as a different, already-past
+		// instance and alerts a second time. The successor stays owned by state.
+		if (result.dueLocal.slice(0, 10) !== record.dueLocal.slice(0, 10)) {
+			await this.tickNow();
+			return;
+		}
 		const from = parseHm(record.dueLocal.slice(11));
 		const to = parseHm(result.dueLocal.slice(11));
 		if (from && to) {
@@ -405,7 +416,9 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 		const today = localToday(Date.now(), this.tzId());
 		const items: AgendaItem[] = engine
 			.snapshot()
-			.filter((record) => record.state === "scheduled" || record.state === "armed" || record.state === "snoozed")
+			// "snoozed" is a superseded predecessor: it stays in state so that the old
+			// time still in the note cannot fire, but it is not a pending reminder.
+			.filter((record) => record.state === "scheduled" || record.state === "armed")
 			.map((record) => ({
 				instanceId: record.instanceId,
 				title: record.title,

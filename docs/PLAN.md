@@ -119,14 +119,21 @@ Machine-checked, on this machine, Obsidian 1.13.7:
 | Bundle builds | `npm run build` | pass (`main.js`, 63 KB) |
 | Review-guideline lint | `npm run lint` | 0 errors, 0 warnings (`eslint-plugin-obsidianmd`) |
 | Type checking | `tsc -noEmit -skipLibCheck` | pass |
-| Behaviour | `npx vitest run` | 8 files, 75 tests, pass |
+| Behaviour | `npx vitest run` | 10 files, **87 tests**, pass |
 | Harness contract | `verify_work` | PASS — 4 checks, re-run against the current tree |
-| **Real app, end to end** | `npm run smoke` | pass — plugin loads; a dated note containing `- [ ] smoke test 21:11` is parsed; the alert fires **exactly once** through the catch-up path (`ageMinutes: 2`, `severity: alarm`); the fired log records `dueLocal: 2026-09-10T21:11`; the rendered notice reads `smoke test · 21:11 · 2 min late · 10-09-2026-smoke`; exactly one delivery notice exists for the instance |
+| **Real app, end to end** | `npm run smoke` | pass — plugin loads; the note `journal/2026/10-09-2026-Thursday.md` is resolved **from its filename** (daily-note format + folder cross-check) to `dueLocal: 2026-09-10T21:24`; the alert fires **exactly once** through the catch-up path; exactly one delivery notice exists; the rendered notice reads `smoke test · 21:24 · 2 min late · 10-09-2026-Thursday` |
 
 The smoke harness (`scripts/smoke.mjs`) launches a real Obsidian with an isolated profile against a
-throwaway vault, drives it over the Chrome DevTools Protocol, and asserts the parsed schedule, the
-exact-once guarantee and the rendered alert text — not mere liveness. It is dependency-free and is the
-regression gate for anything that touches parsing, scheduling or delivery.
+throwaway vault, creates the note through the vault API, waits for it to appear in the metadata cache,
+then drives the app over the Chrome DevTools Protocol and asserts the parsed schedule, the
+exact-once guarantee and the rendered alert text. It is dependency-free and is the regression gate for
+anything that touches parsing, scheduling or delivery.
+
+The invariant tests were validated by mutation rather than by assertion count: nine deliberate
+mutations of the engine in a throwaway clone (arming moved to `due`, lease renewal removed, a refused
+claim marked notified, tick-join disabled, a re-created superseded instance forced back to
+`scheduled`, `snoozed` no longer skipped, the supersede marker ignored, the prune removed, the title
+returned to `messageSummary`) each fail exactly the intended test.
 
 ## 10. Defects found before anything was called done
 
@@ -148,6 +155,19 @@ the market's top two complaints and these were all instances of those two failur
 Two of these — the triple delivery and the contentless alert text — were found only by reading the
 real app's output, not by unit tests. That is the argument for keeping the smoke harness as a release
 gate rather than a convenience script.
+
+A second review pass, after the harness was trustworthy, found five more before release:
+
+| Defect | How it would have shown up for a user |
+|---|---|
+| The title went *into* `messageSummary` while three surfaces already render it separately | The task name printed twice in the OS notification, the alert window, and the mobile fallback |
+| A refused cross-device claim was recorded as `armed` — one state meaning both "we own it" and "we lost it" | Nothing observable broke, but no test could assert either meaning, and the agenda showed a device as armed while another device fired |
+| The arming window (10 min) outran the lease TTL (5 min), so the claim lapsed before the due time | Two devices could both fire: the reserved alert was not actually reserved |
+| A snooze across midnight wrote the new time into the previous day's note | `23:50 + 30 min` became `00:20` under yesterday's date, re-parsed as a different already-past instance, and alerted a second time |
+| A superseded instance deleted from state was re-created by the next rescan and fired at its old time | A snoozed reminder comes back and alerts at the time you snoozed away from |
+
+The fixes are in `docs/decisions.md` §9–§11, and each is pinned by a test that fails if the fix is
+reverted.
 
 
 ## 11. Success metrics

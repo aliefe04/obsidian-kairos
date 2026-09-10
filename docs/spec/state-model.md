@@ -46,6 +46,7 @@ interface ReminderRecord {
   catchUp: 'fire_now_with_age' | 'fold_into_digest' | 'skip_and_mark_missed';
   state: 'scheduled' | 'armed' | 'notified' | 'snoozed' | 'acked' | 'muted' | 'missed' | 'cancelled';
   snoozeCount: number;
+  supersedes?: string;         // predecessor instanceId when born from a snooze
   lease?: { deviceId: string; seq: number; expiresAt: number };
   firedBy: string[];           // deviceIds
   firstSeenAt: number;         // epoch ms
@@ -88,9 +89,18 @@ Rules that are easy to get wrong, so they are stated here then tested:
   within 60 s is suppressed even if the index is rebuilt.
 - **Lease, not agreement.** Cross-device single-fire is decided by a lease file
   (`lease = {deviceId, seq, expiresAt}`) written create-only and renewed only with a non-decreasing
-  `seq`; TTL ≥ 2× the worst plausible clock skew (default 5 minutes). If the lease cannot be read
-  (Obsidian Sync disabled for `.obsidian`, or a vault synced by a non-Obsidian tool), Kairos still
-  fires locally and records the fire; it degrades to per-device firing, never to silence.
+  `seq`; TTL ≥ 2× the worst plausible clock skew (default 5 minutes). The arming window renews the
+  claim on every pass, so a `leadMinutes` longer than the TTL still reserves the alarm, and `armed`
+  means "this device holds the claim and is waiting for `due`" — a *refused* claim leaves the record
+  `scheduled`, is reported in `blockedByLease`, and is retried on the next tick. If the lease cannot
+  be read (Obsidian Sync disabled for `.obsidian`, or a vault synced by a non-Obsidian tool), Kairos
+  still fires locally and records the fire; it degrades to per-device firing, never to silence.
+- **A snooze successor owns its time.** `snooze()` marks the predecessor `snoozed` and sets
+  `supersedes` on the successor. `sync()` forces any index-derived instance that is in the
+  `superseded` set to `snoozed`, so a note still carrying the old time cannot fire beside its
+  successor; a `snoozed` record absent from the index is pruned because its old time left the note.
+  The in-note rewrite is skipped when the snooze crosses midnight — `00:20` written under yesterday's
+  date would re-parse as a different, already-past instance.
 - **Catch-up on launch.** At `onLayoutReady`, instances with `due + grace < now` and no ack apply
   their `catchUp` policy. Default `grace` is 15 minutes; default policy is `fire_now_with_age`
   (the alert says "09:00 — 2h ago"), because a silently dropped alarm is the single most common
