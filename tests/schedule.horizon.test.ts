@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 import type { DeliveryResult, OutboundMessage } from "../src/channels/types";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { SCHEDULE_BACKOFF_BASE_MS, SCHEDULE_BACKOFF_MAX_MS } from "../src/schedule/engine";
+import { SCHEDULE_BACKOFF_BASE_MS, SCHEDULE_BACKOFF_MAX_MS, SCHEDULE_RETRY_MARGIN_MS } from "../src/schedule/engine";
 import { makeEngine, parsedReminder, type EngineHarness } from "./support";
 
 const HOUR = 60 * 60 * 1000;
@@ -145,5 +145,43 @@ describe("server scheduling backoff", () => {
 		const after = await h.engine.syncServerScheduled(now + 1000);
 		expect(after.deferred).toEqual([]);
 		expect(after.cleared).toContain(h.engine.instanceIdOf(reminder));
+	});
+
+	it("never delays the next attempt past the due time", async () => {
+		// Ten minutes of lead. The ladder reaches an 8-minute wait after four
+		// refusals, which would land after the due time — the registration would
+		// never succeed and, with the app closed, the alert would never arrive.
+		const MINUTE = 60 * 1000;
+		const now = DUE - 10 * MINUTE;
+		const h = harness({ now });
+		await h.engine.sync([parsedReminder({ dueLocal: "2026-09-11T09:00" })]);
+		h.recorder.failNext = 20;
+
+		await h.engine.syncServerScheduled(now); // 1, waits 1 min
+		expect((await h.engine.syncServerScheduled(DUE - 9 * MINUTE - 1)).deferred).toHaveLength(1);
+		await h.engine.syncServerScheduled(DUE - 9 * MINUTE); // 2, waits 2 min
+		await h.engine.syncServerScheduled(DUE - 7 * MINUTE); // 3, waits 4 min
+		expect(h.recorder.attempts).toBe(3);
+		expect((await h.engine.syncServerScheduled(DUE - 5 * MINUTE)).deferred).toHaveLength(1);
+
+		// The next wait would be 8 minutes, which overshoots the due time, so the
+		// attempt happens here instead and the wait is clamped to the deadline.
+		await h.engine.syncServerScheduled(DUE - 3 * MINUTE); // 4
+		expect(h.recorder.attempts).toBe(4);
+		expect((await h.engine.syncServerScheduled(DUE - 2 * MINUTE)).deferred).toHaveLength(1);
+
+		// The clamped attempt lands one minute before due, so it still has a chance.
+		const deadline = DUE - SCHEDULE_RETRY_MARGIN_MS;
+		expect((await h.engine.syncServerScheduled(deadline)).failed).toHaveLength(1);
+		expect(h.recorder.attempts).toBe(5);
+
+		// Inside the final margin the deadline is gone, so attempts continue at once
+		// and the due time is what ends them.
+		await h.engine.syncServerScheduled(deadline);
+		expect(h.recorder.attempts).toBe(6);
+		const afterDue = await h.engine.syncServerScheduled(DUE);
+		expect(afterDue.failed).toEqual([]);
+		expect(afterDue.deferred).toEqual([]);
+		expect(h.recorder.attempts).toBe(6);
 	});
 });

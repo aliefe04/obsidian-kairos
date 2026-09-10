@@ -80,6 +80,12 @@ Design rules for every push channel:
    rescan and start, so an instant retry would spend the provider's quota on a request that is known
    to fail — and a refusal caused by the horizon fails every time until the reminder comes inside it.
    Self-hosting users raise the horizon in the settings.
+6. **A refusal can never push the next attempt past the due time.** The wait is clamped to one minute
+   before `due`, because a retry after `due` cannot work: the provider would be asked to deliver in the
+   past, and the alert would never be registered at all. Inside that final minute the retry happens at
+   once, and the due time itself ends the attempts. The last pass is visible to the user as a line in
+   the settings tab and in **Copy diagnostics** — a phone that stops ringing must not be silent about
+   it.
 
 ## T4 — Self-hosted relay (Phase 3, opt-in)
 

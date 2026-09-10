@@ -18,7 +18,7 @@ import { normalizeRelPath } from "./parse/instanceId";
 import { rewriteTimeToken, type ParsedReminder, type ParseSettings } from "./parse/parseNote";
 import type { Hm } from "./parse/timeTokens";
 import { formatHm, parseHm } from "./parse/timeTokens";
-import { ScheduleEngine, messageSummary, type ReminderRecord, type TickResult } from "./schedule/engine";
+import { ScheduleEngine, messageSummary, type ReminderRecord, type ServerScheduleResult, type TickResult } from "./schedule/engine";
 import { FileStateStore, stateRoot } from "./schedule/stateStore";
 import { deviceTimeZone, localToday, shiftYmd } from "./schedule/time";
 import { DEFAULT_SETTINGS, KairosSettingTab, normalizeSettings, type KairosSettings, type SettingsHost } from "./settings";
@@ -40,6 +40,8 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 	override settings: KairosSettings = { ...DEFAULT_SETTINGS };
 	private readonly registry = new ChannelRegistry();
 	private engine: ScheduleEngine | null = null;
+	/** The last mirroring pass, so a refused registration is visible rather than silent. */
+	private lastPushPass: ServerScheduleResult | null = null;
 	private indexer: VaultIndexer | null = null;
 	private deviceId = "";
 	private dailyNotesFormat = "";
@@ -506,7 +508,23 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 
 	/** Mirrors the live index into the channels that deliver with the app closed. */
 	private async syncServerSchedule(): Promise<void> {
-		await this.engine?.syncServerScheduled();
+		const engine = this.engine;
+		if (!engine) {
+			return;
+		}
+		this.lastPushPass = await engine.syncServerScheduled();
+	}
+
+	/**
+	 * One line about the last push pass. A phone that stops ringing because the
+	 * provider refuses the registration must not be silent about it.
+	 */
+	pushSummary(): string {
+		const pass = this.lastPushPass;
+		if (!pass) {
+			return "push scheduling: no pass yet";
+		}
+		return `push scheduling: ${pass.sent.length} sent, ${pass.failed.length} failed, ${pass.deferred.length} deferred, ${pass.cleared.length} cancelled`;
 	}
 
 	private async copyDiagnostics(): Promise<void> {
@@ -526,6 +544,7 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 			`Kairos ${this.manifest.version} on Obsidian ${this.app.vault.configDir},`,
 			`device ${this.deviceId}, platform ${Platform.isMobileApp ? "mobile" : "desktop"}, tz ${this.tzId()},`,
 			`records ${records.length}, channels ${this.registry.names().join(", ")},`,
+			this.pushSummary(),
 			`daily notes folder ${this.settings.dailyNotesFolder || "(detected)"}, format ${this.dailyNotesFormat || "(default)"}`,
 		].join("\n");
 	}

@@ -73,7 +73,8 @@ it. New entries go at the end.
   only covers a running device, which defeats the purpose); running our own push service.
 - **Consequence:** a closed laptop still receives the push, because the server is holding it. The
   costs are deliberate: re-sends are tolerated because the payload carries the instance id, and
-  nothing beyond the horizon (default seven days) is mirrored.
+  nothing beyond the horizon is mirrored — three days by default, which is `ntfy.sh`'s documented
+  maximum delay (§12 explains the limit, the backoff and its clamp).
 
 ## 7. `leadMinutes` is an arming window, not an early alert
 

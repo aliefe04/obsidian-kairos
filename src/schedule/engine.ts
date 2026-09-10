@@ -231,6 +231,13 @@ export const SCHEDULE_BACKOFF_BASE_MS = 60 * 1000;
 /** Ceiling for that backoff, so a doomed registration retries four times a day. */
 export const SCHEDULE_BACKOFF_MAX_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * How long before `due` the last useful registration attempt must happen.
+ * `ntfy.sh` requires an `X-At` delay of at least 10 seconds; a minute leaves room
+ * for the request to land and the server to hold it.
+ */
+export const SCHEDULE_RETRY_MARGIN_MS = 60 * 1000;
+
 export interface ServerScheduleResult {
 	/** Instances mirrored to a server-scheduled channel in this pass. */
 	sent: string[];
@@ -743,11 +750,11 @@ export class ScheduleEngine {
 					this.scheduleBackoff.delete(record.instanceId);
 					result.sent.push(record.instanceId);
 				} else {
-					this.noteScheduleFailure(record.instanceId, now);
+					this.noteScheduleFailure(record.instanceId, now, due);
 					result.failed.push(record.instanceId);
 				}
 			} catch {
-				this.noteScheduleFailure(record.instanceId, now);
+				this.noteScheduleFailure(record.instanceId, now, due);
 				result.failed.push(record.instanceId);
 			}
 		}
@@ -772,11 +779,22 @@ export class ScheduleEngine {
 	 * index change, ack, snooze, rescan and start, so an instant retry would spend
 	 * the provider's quota on a request that is known to fail — and a reminder due
 	 * beyond the provider's delay limit fails every time until it comes inside it.
+	 *
+	 * The wait is clamped to just before `due`. A retry that lands after the due
+	 * time cannot work: the provider would be asked to deliver in the past, so the
+	 * alert would never be registered at all, which is the failure this backoff
+	 * exists to bound. Clamping keeps at least one attempt inside the window where
+	 * it can still succeed, even after a long outage.
 	 */
-	private noteScheduleFailure(instanceId: string, now: number): void {
+	private noteScheduleFailure(instanceId: string, now: number, due: number): void {
 		const attempts = (this.scheduleBackoff.get(instanceId)?.attempts ?? 0) + 1;
 		const delay = Math.min(SCHEDULE_BACKOFF_BASE_MS * 2 ** (attempts - 1), SCHEDULE_BACKOFF_MAX_MS);
-		this.scheduleBackoff.set(instanceId, { attempts, retryAt: now + delay });
+		const lastUsefulRetryAt = due - SCHEDULE_RETRY_MARGIN_MS;
+		// `Math.max(now, …)`: inside the final margin the deadline is already gone,
+		// so retry at once and let the due time itself end the attempts — after it
+		// the record leaves the horizon and is skipped.
+		const retryAt = Math.max(now, Math.min(now + delay, lastUsefulRetryAt));
+		this.scheduleBackoff.set(instanceId, { attempts, retryAt });
 	}
 
 	private async clearPush(instanceId: string): Promise<void> {

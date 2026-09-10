@@ -211,6 +211,8 @@ export interface SettingsHost {
 	settings: KairosSettings;
 	saveSettings(): Promise<void>;
 	channelNames(): string[];
+	/** One line about the last push pass, shown with the channel list. */
+	pushSummary(): string;
 }
 
 /** Keys whose value has type `T`, so a control can only bind a setting of the matching type. */
@@ -492,7 +494,7 @@ export class KairosSettingTab extends PluginSettingTab {
 					{
 						name: "Registered channels",
 						render: (setting) => {
-							setting.setDesc(`Registered channels: ${this.host.channelNames().join(", ")}.`);
+							setting.setDesc(`Registered channels: ${this.host.channelNames().join(", ")}. ${this.host.pushSummary()}.`);
 						},
 					},
 					toggleDef("desktopEnabled", "Desktop notifications", "Show an operating system notification when an alarm is due.", [
