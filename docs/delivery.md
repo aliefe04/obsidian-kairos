@@ -51,7 +51,8 @@ Honest limitations, which the UI states at the point of configuration:
 
 ## T3 — Webhook push (a phone alert with Obsidian closed)
 
-Channels, in the order they are offered, with the constraints that decided the order:
+Channels, in the order they will be offered. **v0.1.0 ships `ntfy` only**; Bark, Pushover, Telegram
+and the generic webhook are Phase 2 (`docs/roadmap.md`). The constraints below decided the order:
 
 | Channel | Why it is ranked here | Constraint to state in the UI |
 |---|---|---|
@@ -70,8 +71,8 @@ Design rules for every push channel:
    Obsidian being closed for days — the specific failure of the incumbent's 24-hour window.
 3. **Two-way cancel.** Completing or rescheduling a task clears the scheduled push
    (`X-Sequence-ID` + `clear()`), so a done task does not buzz the phone an hour later.
-4. **Test button per channel**, plus a "send nothing but the title" default, because a user who cannot
-   see what will leave their device will not turn the channel on.
+4. **A `Test notification` command** that fans out to every configured channel, plus a title-only
+   default, because a user who cannot see what will leave their device will not turn the channel on.
 
 ## T4 — Self-hosted relay (Phase 3, opt-in)
 

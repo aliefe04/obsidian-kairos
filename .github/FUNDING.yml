@@ -1,1 +1,4 @@
+# Takes effect once the GitHub Sponsors profile for this account exists.
+# Until then, `manifest.json` deliberately carries no `fundingUrl`, so that the
+# plugin's settings never show a Donate button that leads nowhere.
 github: aliefe04

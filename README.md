@@ -108,7 +108,9 @@ The specs are in `docs/spec/syntax.md` (what is written in a note) and `docs/spe
 
 | Document | Content |
 |---|---|
-| `CONTEXT.md` | The words this project uses, and the words it avoids. Start here. |
+| `docs/setup.md` | **Configure delivery**: desktop, ntfy on the phone, calendar file. Start here as a user. |
+| `docs/faq.md` | **User questions**: the locked phone, a missed alert, a double alert, privacy |
+| `CONTEXT.md` | The words this project uses, and the words it avoids. Start here as a contributor. |
 | `CONTRIBUTING.md` | Build, test, and the four contribution lanes (channel, locale, recipe, test) |
 | `CHANGELOG.md` | What changed, and what is known to be limited |
 | `SECURITY.md` | Private reporting, and what counts as in scope |
