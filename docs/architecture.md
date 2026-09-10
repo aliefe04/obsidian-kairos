@@ -127,10 +127,12 @@ relies on them, because the production defaults fold an alarm inside quiet hours
 the next digest: a harness that writes a note two minutes in the past passed at 21:24 and reported
 "fired: 0" at 22:02 with the same code.
 
-It also covers boundaries: a test that lands exactly on a window or a due time proves less than one
-that lands just after it. Every boundary test in this repository advances to the instant plus a few
-milliseconds, because an interval and a wake timer never fire exactly on the instant, and a lookup that
-returns the *next* candidate — `nextDigestAt` — behaves differently in those two cases.
+It also covers boundaries, and two kinds of them. A test that pins delivery *at* a due time ticks
+exactly on it, because that is the rule: the alert fires at `due` (`schedule.engine.test.ts`, the DST
+and midnight cases). A test that pins a *digest window* ticks just after it, because `nextDigestAt`
+returns the next candidate at or after `now`, so a pass one millisecond late would otherwise choose the
+following window: the fold-to-digest test fails against a plan that re-derives its window from the tick
+and passes against one that pins it.
 
 ## 8. Known platform limits the architecture accepts
 
