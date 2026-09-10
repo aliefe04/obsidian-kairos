@@ -119,7 +119,7 @@ Machine-checked, on this machine, Obsidian 1.13.7:
 | Bundle builds | `npm run build` | pass (`main.js`, 63 KB) |
 | Review-guideline lint | `npm run lint` | 0 errors, 0 warnings (`eslint-plugin-obsidianmd`) |
 | Type checking | `tsc -noEmit -skipLibCheck` | pass |
-| Behaviour | `npx vitest run` | 10 files, **87 tests**, pass |
+| Behaviour | `npx vitest run` | 10 files, **88 tests**, pass |
 | Harness contract | `verify_work` | PASS — 4 checks, re-run against the current tree |
 | **Real app, end to end** | `npm run smoke` | pass — plugin loads; the note `journal/2026/10-09-2026-Thursday.md` is resolved **from its filename** (daily-note format + folder cross-check) to `dueLocal: 2026-09-10T21:24`; the alert fires **exactly once** through the catch-up path; exactly one delivery notice exists; the rendered notice reads `smoke test · 21:24 · 2 min late · 10-09-2026-Thursday` |
 
@@ -166,8 +166,19 @@ A second review pass, after the harness was trustworthy, found five more before 
 | A snooze across midnight wrote the new time into the previous day's note | `23:50 + 30 min` became `00:20` under yesterday's date, re-parsed as a different already-past instance, and alerted a second time |
 | A superseded instance deleted from state was re-created by the next rescan and fired at its old time | A snoozed reminder comes back and alerts at the time you snoozed away from |
 
+A third pass over the alert surfaces, after the review above, found three more:
+
+| Defect | How it would have shown up for a user |
+|---|---|
+| The title-free summary was also used as the *whole* text of the in-app notice after the revert, and three tests pinned that | On mobile — where the notice is the only alert surface — the alert read `21:22 · 3 min late · 10-09-2026-Thursday` with no task name |
+| The alert window was gated on `actions`, which is always true, so it opened for digests too | A batched digest delivery popped a window and stole keyboard focus, contradicting the whole point of digests |
+| The window setting's copy promised a window for "due alarms" while the code opened one for any delivery with actions | The setting described behaviour the code did not have |
+
 The fixes are in `docs/decisions.md` §9–§11, and each is pinned by a test that fails if the fix is
-reverted.
+reverted. The lesson recorded from three rounds: the alert *surfaces* were the least-tested part of a
+plugin whose whole purpose is alerting, which is why `tests/channels.desktop.test.ts` now asserts the
+delivery matrix explicitly (alarm → notification + window; digest → notification only; mobile and
+fallback → a notice that names the task).
 
 
 ## 11. Success metrics

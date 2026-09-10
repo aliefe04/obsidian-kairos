@@ -107,13 +107,17 @@ export function createDesktopChannel(options: DesktopChannelOptions): DeliveryCh
 		mode: "local",
 		isConfigured: (settings: KairosSettings) => settings.desktopEnabled,
 		send: async (message: OutboundMessage, ctx: ChannelContext): Promise<DeliveryResult> => {
-			// `messageSummary` already leads with the title.
-			const text = messageSummary(message);
+			// This string is the whole alert text for the in-app notices, so it has
+			// to carry the task name; the OS notification and the alert window take
+			// the title separately, which is why `messageSummary` stays title-free.
+			const text = `${message.title} · ${messageSummary(message)}`;
 			if (Platform.isMobileApp || Platform.isMobile) {
 				new Notice(text, 0);
 				return { ok: true, detail: "notice" };
 			}
-			const showModal = ctx.settings.desktopAlertModal && message.actions;
+			// Alarms only: a digest is by definition the non-interruptive path, and the
+			// window takes keyboard focus when it opens.
+			const showModal = ctx.settings.desktopAlertModal && message.actions && message.severity === "alarm";
 			const notify = notificationCtor();
 			if (!notify) {
 				new Notice(text, 0);

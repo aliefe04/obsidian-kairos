@@ -142,7 +142,7 @@ describe("createDesktopChannel", () => {
 		expect(result.ok).toBe(true);
 		expect(electron.created).toEqual([]);
 		expect(alertWindows).toEqual([]);
-		expect(notices.map((notice) => notice.message)).toEqual([messageSummary(message)]);
+		expect(notices.map((notice) => notice.message)).toEqual([`${message.title} · ${messageSummary(message)}`]);
 	});
 
 	it("falls back to an in-app notice when Electron exposes no Notification", async () => {
@@ -152,7 +152,7 @@ describe("createDesktopChannel", () => {
 		const result = await sendTo(message, { desktopAlertModal: true });
 
 		expect(result.ok).toBe(true);
-		expect(notices.map((notice) => notice.message)).toEqual([messageSummary(message)]);
+		expect(notices.map((notice) => notice.message)).toEqual([`${message.title} · ${messageSummary(message)}`]);
 		expect(alertWindows.map((modal) => windowContent(modal).title)).toEqual([message.title]);
 	});
 
@@ -205,6 +205,23 @@ describe("createDesktopChannel", () => {
 
 		expect(result.ok).toBe(false);
 		expect(result.detail).toContain("Notification is not available");
-		expect(notices.map((notice) => notice.message)).toEqual([messageSummary(message)]);
+		expect(notices.map((notice) => notice.message)).toEqual([`${message.title} · ${messageSummary(message)}`]);
+	});
+
+	it("never opens an alert window for a digest, and still names the task", async () => {
+		const electron = recordingElectron();
+		stubWindowRequire(() => ({ remote: { Notification: electron.Notification } }));
+		const digest = outboundMessage({ actions: true, severity: "digest" });
+
+		const result = await sendTo(digest, { desktopAlertModal: true });
+
+		expect(result.ok).toBe(true);
+		expect(single(electron.created).shown).toBe(1);
+		// A digest is the non-interruptive path: batched, never focus-stealing.
+		expect(alertWindows).toEqual([]);
+
+		Platform.isMobileApp = true;
+		await sendTo(digest, { desktopAlertModal: true });
+		expect(notices.map((notice) => notice.message)).toEqual([`${digest.title} · ${messageSummary(digest)}`]);
 	});
 });

@@ -102,16 +102,20 @@ it. New entries go at the end.
 ## 9. `messageSummary()` stays title-free; each surface composes the title once
 
 - **Decision:** `messageSummary()` emits `HH:mm · age · note name` and never the title. The title is
-  composed where a surface has no title of its own — the delivery notice in `main.ts`, the ntfy
-  `X-Title`, the notification's `title` field, the modal heading.
+  composed where a surface has no title of its own — the delivery notice in `main.ts`, the channel's
+  own notice text in `desktop.ts`, the ntfy `X-Title`, the notification's `title` field, the modal
+  heading.
 - **Alternatives:** putting the title inside the summary (tried first, reverted). It reads well in
   the notice and prints the task twice everywhere else: the desktop channel renders
   `${title} · ${summary}` in its fallback text, the OS notification carries the title as `title` and
   the summary as `body`, and the modal shows a heading plus the summary paragraph.
 - **Consequence:** the notice reads `call the dentist · 21:13 · 1 min late · 10-09-2026-Friday` while
-  the notification and the window each show the task exactly once. No test pinned the old format, so
-  the duplication would have shipped silently on three surfaces — it was caught by reading the real
-  notice out of the smoke run. `docs/PLAN.md` §10 records it.
+  the notification and the window each show the task exactly once. Two follow-on rules: the alert
+  window is gated to `severity === "alarm"`, because a digest is the non-interruptive path and the
+  window takes keyboard focus; and the notice text is composed at *every* call site that has no title
+  of its own, since on mobile that notice is the only alert surface there is. No test pinned the old
+  format, so the duplication would have shipped silently on three surfaces — it was caught by reading
+  the real notice out of the smoke run. `docs/PLAN.md` §10 records both rounds.
 
 ## 10. A snooze successor owns its time through `supersedes`, not through a counter
 

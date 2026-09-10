@@ -33,6 +33,7 @@ The smallest release that a stranger can install and trust.
 | ICS tier end-to-end | An imported/subscribed `kairos.ics` fires a native calendar alarm on iOS and Android with Obsidian closed; documented refresh caveats |
 | ntfy tier end-to-end on a real phone | A reminder set for tomorrow morning arrives with Obsidian closed overnight |
 | Snooze writes through to the note (default) | Snoozing on one device is visible on another after sync |
+| Two-device snooze and supersede proven | Device A snoozes while device B's copy of the note still shows the old time: exactly one alert arrives, at the new time, and the superseded instance never fires — not even after B rescans and re-creates it from the stale line |
 | Diagnostics command + redacted report template | Issue reports contain version, platform, index size, last 50 state transitions, no vault content |
 | README comparison table vs Reminder/Tasks | Contains only shipped behaviour |
 | BRAT beta + dashboard submission | Automated review passes on the first submission; plugin installable from the directory |

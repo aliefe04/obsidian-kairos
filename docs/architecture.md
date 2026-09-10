@@ -110,7 +110,7 @@ main community growth lane.
 | Review guidelines | `eslint-plugin-obsidianmd` | every push, zero warnings tolerated |
 | Types | `tsc --noEmit` strict with `noUncheckedIndexedAccess` | every push |
 | Real app | `scripts/smoke.mjs` — launches real Obsidian with an isolated profile and a throwaway vault, drives it over CDP, asserts the parsed schedule and the fired log | before every release, and after any change to parsing, scheduling or delivery |
-| Sync behaviour | manual, documented scenarios (two profiles, one vault) | before every release |
+| Sync behaviour | the two-profile protocol: device A snoozes while device B's note is unchanged; a claim refused by B and later released; a note edited by hand while a push is pending; A rescans and re-creates a superseded instance | before every release |
 
 Determinism rule: no test may depend on the wall clock or the host timezone. Time is injected; zone
 tests name their zone explicitly. `zoneinfo`-style sweeps caught the DST defect in Phase 0.

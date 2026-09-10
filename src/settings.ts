@@ -498,7 +498,7 @@ export class KairosSettingTab extends PluginSettingTab {
 					toggleDef(
 						"desktopAlertModal",
 						"Alert window",
-						"Open a window with Done, Snooze and Open note for due alarms.",
+						"Open a window with Done, Snooze and Open note for due alarms. The window takes keyboard focus when it opens, and never opens for digests.",
 						["notification", "snooze", "alert", "done"],
 						() => this.host.settings.desktopEnabled,
 					),
