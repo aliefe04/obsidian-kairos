@@ -33,11 +33,11 @@ Work down this list. It is ordered by how often each cause occurs.
 6. **Was the alert older than the grace time?** An alert more than 15 minutes overdue is delivered
    late, and the text says how late. With the `skip_and_mark_missed` policy it is not delivered at
    all, and it appears in the agenda as missed.
-7. **Did the phone never ring, while the desktop did?** Open the settings: the *Channels* group ends
-   with a *push scheduling* line that reports the last pass, for example
-   `3 sent, 1 failed, 1 deferred`. `failed` or `deferred` that stays above zero means the push provider
-   refused the registration — usually a wrong topic, a revoked token, or a horizon longer than the
-   server allows. The same line is in **Copy diagnostics**.
+7. **Did the phone never ring, while the desktop did?** Open the settings and read the *Registered
+   channels* line, which is the first item in the *Channels* group. It reports the last pass, for
+   example `push scheduling: 3 sent, 1 failed, 1 deferred`. `failed` or `deferred` that stays above
+   zero means the push provider refused the registration — usually a wrong topic, a revoked token, or
+   a horizon longer than the server allows. The same line is in **Copy diagnostics**.
 
 Then run **Copy diagnostics** from the command palette and open an issue with the result. It contains
 versions and paths, never note text.

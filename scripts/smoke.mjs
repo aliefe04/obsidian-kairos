@@ -53,6 +53,45 @@ async function prepareVault() {
 		join(VAULT, ".obsidian", "daily-notes.json"),
 		JSON.stringify({ folder: "journal", format: "YYYY/DD-MM-YYYY-dddd", template: "" }, null, 2),
 	);
+	// Pin the plugin's settings so this harness does not depend on the hour it runs
+	// at. The production defaults fold an alarm inside quiet hours (22:00 → 07:00)
+	// into the next digest, which is correct behaviour and a false failure for a
+	// check that expects an alarm. This vault is a scratch vault, never a user's.
+	await mkdir(PLUGIN_DIR, { recursive: true });
+	await writeFile(
+		join(PLUGIN_DIR, "data.json"),
+		JSON.stringify(
+			{
+				quietHoursEnabled: false,
+				digestTimes: "",
+				catchUpPolicy: "fire_now_with_age",
+				graceMinutes: 15,
+				desktopEnabled: true,
+				desktopAlertModal: false,
+				ntfyEnabled: false,
+				icsEnabled: false,
+				annotateInNote: false,
+			},
+			null,
+			2,
+		),
+	);
+}
+
+/**
+ * A second Obsidian instance cannot share the debugging port, and a leftover one
+ * would make the run attach to a stale application and report failures that
+ * belong to the earlier run. Fail loudly instead.
+ */
+async function assertPortFree() {
+	try {
+		await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`);
+	} catch {
+		return;
+	}
+	throw new Error(
+		`port ${CDP_PORT} already answers: an Obsidian instance from an earlier run still holds it. Stop it before running the smoke test.`,
+	);
 }
 
 async function prepareProfile() {
@@ -157,6 +196,7 @@ async function waitForPlugin(cdp) {
 
 async function main() {
 	const report = { ok: false, steps: [] };
+	await assertPortFree();
 	await build();
 	await prepareVault();
 	await prepareProfile();
@@ -172,6 +212,16 @@ async function main() {
 		report.steps.push({ step: "plugin loaded in the real app", ok: loaded });
 		if (!loaded) {
 			throw new Error("the kairos plugin did not load");
+		}
+
+		// The checks below expect an alarm to fire, which the production defaults
+		// would fold into a digest between 22:00 and 07:00. Pin and verify.
+		const pinned = await cdp.evaluate(
+			"(() => { const s = app.plugins.plugins.kairos.settings; return !!s && s.quietHoursEnabled === false; })()",
+		);
+		report.steps.push({ step: "harness settings pinned: quiet hours off", ok: pinned === true });
+		if (pinned !== true) {
+			throw new Error("the scratch vault did not take the pinned settings");
 		}
 
 		const now = new Date();
