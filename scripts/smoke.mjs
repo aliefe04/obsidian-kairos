@@ -230,7 +230,18 @@ async function main() {
 		// detected — the state a device lands in when the vault's Daily notes
 		// configuration never synced to it, where no dated note resolves and nothing
 		// says so.
-		const diagnostics = await cdp.evaluate("app.plugins.plugins.kairos.diagnostics()");
+		//
+		// `start()` adopts that configuration from `onLayoutReady`, which can land after
+		// `onload` — which is all `waitForPlugin` waits for — so poll for the adoption
+		// rather than reading the line while it still reports nothing detected.
+		let diagnostics = "";
+		for (let attempt = 0; attempt < 40; attempt += 1) {
+			diagnostics = await cdp.evaluate("app.plugins.plugins.kairos.diagnostics()");
+			if (typeof diagnostics === "string" && diagnostics.includes(`daily notes folder ${DAILY_FOLDER}`)) {
+				break;
+			}
+			await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+		}
 		report.diagnostics = diagnostics;
 		report.steps.push({
 			step: "diagnostics name the folder its resolver uses",
