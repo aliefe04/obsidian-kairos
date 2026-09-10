@@ -48,5 +48,5 @@ the community plugin directory yet.
 - The performance target for large vaults (10,000 notes under 1.5 seconds) is a target, not yet a
   measurement. The benchmark is a Phase 1 item.
 
-[Unreleased]: https://github.com/aliefe04/obsidian-kairos/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/aliefe04/obsidian-kairos/releases/tag/v0.1.0
+[Unreleased]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.0...HEAD
+[0.1.0]: https://github.com/aliefe04/obsidian-kairos/releases/tag/0.1.0

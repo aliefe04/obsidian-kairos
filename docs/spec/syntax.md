@@ -61,7 +61,7 @@ A note is *date-scoped* if exactly one of these resolves, in this order:
 4. **File name** matched against the configured formats, in order. Defaults:
    `YYYY-MM-DD`, `DD-MM-YYYY`, `YYYY/MM/DD-MM-YYYY-dddd`, `YYYY/MMMM/DD-MM-YYYY-dddd`,
    `DD.MM.YYYY`, `YYYYMMDD`. Parent folder names are also tried, which is what makes
-   `04 - Journal/2026/08/24-08-2026-Monday.md` resolve (folder `2026`, file `24-08-2026-Monday`).
+   `Journal/2026/08/24-08-2026-Monday.md` resolve (folder `2026`, file `24-08-2026-Monday`).
 5. **Configured Daily Notes folder + format** (`YYYY/MM/DD-MM-YYYY-dddd`) used as a cross-check to
    disambiguate `DD-MM` vs `MM-DD` (a file inside the daily-notes folder with `24-08-2026` is
    unambiguously day-first because the note's own year/month folders corroborate it).

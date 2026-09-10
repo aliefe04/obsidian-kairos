@@ -61,6 +61,28 @@ Run **Kairos: copy diagnostics** and paste the result. It contains no note conte
 
 Do not open a public issue for a security problem. Follow `SECURITY.md`.
 
+## Releasing (maintainers)
+
+The tag must equal the `version` in `manifest.json`, and it must not have a `v` prefix. Obsidian reads
+the manifest at the head of the default branch and then downloads the assets of the release whose tag
+matches that version. A tag of `v0.1.0` would publish a release that no user ever receives.
+
+1. `npm version patch` (or `minor`, or `major`). This rewrites `manifest.json`, adds the new entry to
+   `versions.json`, and stages both files.
+2. Commit the bump: `git commit -m "Release 0.1.0"`.
+3. Tag it with the same version: `git tag 0.1.0`.
+4. Push the branch and the tag: `git push origin main && git push origin 0.1.0`.
+5. The `Release` workflow builds the plugin and opens a **draft** release containing `main.js`,
+   `manifest.json` and `kairos.zip`. Add the release notes, then publish the draft.
+6. Announce in the forum thread *Share & showcase* and in Discord `#updates`. The Discord channel
+   needs the `developer` role.
+
+`versions.json` maps a plugin version to the minimum app version. Add a mapping only when
+`minAppVersion` changes; otherwise leave the file alone.
+
+Do not re-tag a published version. If a release is wrong, publish the next patch version instead,
+because users who already installed the first one will never see a change under the same version.
+
 ## Licence
 
 By contributing you agree that your work is released under the MIT licence of this repository.
