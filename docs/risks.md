@@ -21,6 +21,7 @@ each item names the experiment that would settle it.
 | R10 | **A fork fragments the user base** (as happened with Day Planner) | Low | Medium | MIT license, org ownership, public roadmap, and a documented path for large features to land upstream before someone forks | A fork gaining > 500 installs |
 | R11 | **Timezone/DST bugs are silent** — the market's unowned risk | Medium | High | Two-probe DST resolution with explicit gap/overlap semantics, zone stored per instance, zone-change re-registration, and unit tests naming the zones | Any report of an alert at the wrong hour |
 | R12 | **The `leadMinutes` setting is misread** as "notify me early" | Medium | Low | The settings description states it is an arming window; an actual advance-notice feature is a Phase 2 decision (see Q3) | Confusion in issues or reviews |
+| R13 | **A push provider refuses a registration and the client keeps asking** — ntfy.sh rejects a delay beyond three days, and passes run on every index change, ack, snooze, rescan and start | Was High, now Low | Medium | The horizon defaults to the provider's limit, a refusal backs off exponentially to a 6-hour ceiling, and the deferred instances are reported rather than silently dropped. `ServerScheduleResult.deferred` is the observable | Any `deferred` count that stays above zero for a reminder already inside the horizon |
 
 ## 2. Open questions, with the experiment that answers each
 

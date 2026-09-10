@@ -45,6 +45,8 @@ export interface KairosSettings {
 	ntfyTopic: string;
 	ntfyToken: string;
 	ntfyPriority: number;
+	/** Days ahead that a push provider may be asked to hold an alert. */
+	serverScheduleHorizonDays: number;
 	icsEnabled: boolean;
 	icsPath: string;
 	icsAlarmMinutesBefore: number;
@@ -91,6 +93,9 @@ export const DEFAULT_SETTINGS: KairosSettings = {
 	ntfyTopic: "",
 	ntfyToken: "",
 	ntfyPriority: 4,
+	// ntfy.sh rejects a longer delay (`message-delay-limit`), and a refusal is a
+	// wasted request against the provider's quota.
+	serverScheduleHorizonDays: 3,
 	icsEnabled: false,
 	icsPath: "kairos.ics",
 	icsAlarmMinutesBefore: 0,
@@ -195,6 +200,7 @@ export function normalizeSettings(raw: unknown): KairosSettings {
 		ntfyTopic: coerceString(data["ntfyTopic"], DEFAULT_SETTINGS.ntfyTopic),
 		ntfyToken: coerceString(data["ntfyToken"], DEFAULT_SETTINGS.ntfyToken),
 		ntfyPriority: coerceNumber(data["ntfyPriority"], DEFAULT_SETTINGS.ntfyPriority, 1, 5),
+		serverScheduleHorizonDays: coerceNumber(data["serverScheduleHorizonDays"], DEFAULT_SETTINGS.serverScheduleHorizonDays, 1, 30),
 		icsEnabled: coerceBoolean(data["icsEnabled"], DEFAULT_SETTINGS.icsEnabled),
 		icsPath: coerceString(data["icsPath"], DEFAULT_SETTINGS.icsPath),
 		icsAlarmMinutesBefore: coerceNumber(data["icsAlarmMinutesBefore"], DEFAULT_SETTINGS.icsAlarmMinutesBefore, 0, 1440),
@@ -538,6 +544,14 @@ export class KairosSettingTab extends PluginSettingTab {
 						"Include the note name",
 						"Add the note name to outgoing payloads. The task title is always sent.",
 						["notification", "push", "payload", "note name", "privacy"],
+					),
+					sliderDef(
+						"serverScheduleHorizonDays",
+						"Push scheduling horizon (days)",
+						"How far ahead a push provider may hold an alert. ntfy.sh rejects a delay longer than three days, so raise this only if your own server allows a longer one.",
+						["ntfy", "push", "horizon", "schedule", "mobile"],
+						{ min: 1, max: 30, step: 1 },
+						() => this.host.settings.ntfyEnabled,
 					),
 					toggleDef("icsEnabled", "Write a calendar file", "Keep an iCalendar file up to date inside the vault.", ["calendar", "ics", "export"]),
 					textDef("icsPath", "Calendar file path", "Vault-relative path, for example `kairos.ics`.", ["calendar", "ics", "path"], () =>

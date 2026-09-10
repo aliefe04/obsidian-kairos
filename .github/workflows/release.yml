@@ -16,6 +16,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check that the tag matches manifest.version
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="$(node -p "require('./manifest.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag '$tag' does not match the manifest version '$version'. Obsidian installs the release whose tag equals manifest.version, so this release would never reach a user. Delete the tag and push '$version' instead."
+            exit 1
+          fi
+          echo "Tag $tag matches manifest version $version"
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22.x"

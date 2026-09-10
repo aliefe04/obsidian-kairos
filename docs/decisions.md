@@ -147,3 +147,22 @@ it. New entries go at the end.
   silent and never fire even after the other device released the claim).
 - **Consequence:** cross-device arbitration is observable and testable: `blockedByLease` is the signal,
   and the losing device still fires if the winner never does.
+
+## 12. Server-side scheduling is bounded by the provider, and a refusal backs off
+
+- **Decision:** the horizon is a setting, `serverScheduleHorizonDays`, defaulting to **three days** —
+  `ntfy.sh`'s documented maximum delay (`message-delay-limit`). A reminder due beyond the horizon is
+  not registered at all. A refused registration is remembered with an exponential delay (1 minute,
+  doubling, capped at 6 hours) and reported in `ServerScheduleResult.deferred` instead of being
+  retried on every pass.
+- **Alternatives:** the seven-day horizon this shipped with (every registration in the 3–7 day window
+  is an HTTP 400, and the pass ran on every index change, ack, snooze, rescan and start — a quota
+  burn against `ntfy.sh`, with a rate limit as the likely second-order effect); retrying until the
+  reminder comes inside the limit (the same quota burn, slower); giving up permanently after one
+  refusal (a transient network error would then silence an alert for good).
+- **Consequence:** the README's "with Obsidian closed" promise is now honest at three days on the
+  default server, and a self-hosting user can raise it in the settings. The horizon is read from the
+  live settings object, which `setControlValue` mutates in place, so a change applies on the next pass
+  without rebuilding the engine. Six tests pin the horizon and the backoff ladder, including that a
+  jump of exactly the cap length retries and that an instance which leaves the index stops being
+  tracked.

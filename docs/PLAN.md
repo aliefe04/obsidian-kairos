@@ -119,7 +119,7 @@ Machine-checked, on this machine, Obsidian 1.13.7:
 | Bundle builds | `npm run build` | pass (`main.js`, 63 KB) |
 | Review-guideline lint | `npm run lint` | 0 errors, 0 warnings (`eslint-plugin-obsidianmd`) |
 | Type checking | `tsc -noEmit -skipLibCheck` | pass |
-| Behaviour | `npx vitest run` | 10 files, **88 tests**, pass |
+| Behaviour | `npx vitest run` | 11 files, **94 tests**, pass |
 | Harness contract | `verify_work` | PASS — 4 checks, re-run against the current tree |
 | **Real app, end to end** | `npm run smoke` | pass — plugin loads; the note `journal/2026/10-09-2026-Thursday.md` is resolved **from its filename** (daily-note format + folder cross-check) to `dueLocal: 2026-09-10T21:24`; the alert fires **exactly once** through the catch-up path; exactly one delivery notice exists; the rendered notice reads `smoke test · 21:24 · 2 min late · 10-09-2026-Thursday` |
 
@@ -174,12 +174,24 @@ A third pass over the alert surfaces, after the review above, found three more:
 | The alert window was gated on `actions`, which is always true, so it opened for digests too | A batched digest delivery popped a window and stole keyboard focus, contradicting the whole point of digests |
 | The window setting's copy promised a window for "due alarms" while the code opened one for any delivery with actions | The setting described behaviour the code did not have |
 
-The fixes are in `docs/decisions.md` §9–§11, and each is pinned by a test that fails if the fix is
-reverted. The lesson recorded from three rounds: the alert *surfaces* were the least-tested part of a
-plugin whose whole purpose is alerting, which is why `tests/channels.desktop.test.ts` now asserts the
-delivery matrix explicitly (alarm → notification + window; digest → notification only; mobile and
-fallback → a notice that names the task).
+A fourth pass, on the push path, found two more:
 
+| Defect | How it would have shown up for a user |
+|---|---|
+| The scheduling horizon was seven days while `ntfy.sh` refuses a delay beyond three, so every registration in the 3–7 day window was an HTTP 400 | Far-off reminders never reached the phone, and the README's "with Obsidian closed" claim was really a three-day claim |
+| A refused registration was retried on **every** pass, and passes run on every index change, ack, snooze, rescan and start | A quota burn against the provider, with a rate limit as the likely second-order effect — and the doomed requests could crowd out the registrations that would have succeeded |
+
+The fixes are in `docs/decisions.md` §12. Both are now pinned by `tests/schedule.horizon.test.ts`,
+which asserts the default, the refusal to register beyond it, the raised-horizon path for a
+self-hosted server, the backoff ladder, its ceiling, and that an instance leaving the index stops
+being tracked.
+
+The lesson recorded from four rounds: the alert *surfaces* were the least-tested part of a plugin
+whose whole purpose is alerting, and the provider *contracts* were the least-checked part of the
+delivery path. That is why `tests/channels.desktop.test.ts` asserts the delivery matrix explicitly
+(alarm → notification + window; digest → notification only; mobile and fallback → a notice that names
+the task) and why `tests/schedule.horizon.test.ts` asserts agreement with the provider's documented
+limits, not only with our own behaviour.
 
 ## 11. Success metrics
 
@@ -192,5 +204,5 @@ fallback → a notice that names the task).
 | Community | ≥ 3 external channel or locale contributions merged | Git history |
 | Review | Clean automated review on every release | Dashboard |
 
-No telemetry is collected; all five are measurable from the public dashboard, GitHub, or data the
+No telemetry is collected; all six are measurable from the public dashboard, GitHub, or data the
 user chooses to share in a report.

@@ -67,8 +67,12 @@ The tag must equal the `version` in `manifest.json`, and it must not have a `v` 
 the manifest at the head of the default branch and then downloads the assets of the release whose tag
 matches that version. A tag of `v0.1.0` would publish a release that no user ever receives.
 
-1. `npm version patch` (or `minor`, or `major`). This rewrites `manifest.json`, adds the new entry to
-   `versions.json`, and stages both files.
+1. `npm version patch --no-git-tag-version` (or `minor`, or `major`). This rewrites `manifest.json`,
+   adds the new entry to `versions.json`, and stages both files.
+
+   The `--no-git-tag-version` flag is required. Without it npm creates its own commit **and** a tag,
+   and npm's version tags carry a `v` prefix by default — which produces exactly the `v0.1.0` tag that
+   step 3 must avoid, while making step 2 a no-op.
 2. Commit the bump: `git commit -m "Release 0.1.0"`.
 3. Tag it with the same version: `git tag 0.1.0`.
 4. Push the branch and the tag: `git push origin main && git push origin 0.1.0`.

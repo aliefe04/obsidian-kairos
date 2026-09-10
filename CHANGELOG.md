@@ -44,6 +44,9 @@ the community plugin directory yet.
 
 - Obsidian mobile cannot alert while the app is closed. This is a platform limit. The `.ics` and push
   tiers cover it; see `docs/delivery.md`.
+- A push provider holds a scheduled alert for a bounded period. On `ntfy.sh` the maximum is three
+  days, which is why the registration horizon defaults to three days. A user who runs their own server
+  with a larger limit can raise it in the settings.
 - Recurrence (`🔁`) is read for display and never advanced. Tasks and Reminder own that field.
 - The performance target for large vaults (10,000 notes under 1.5 seconds) is a target, not yet a
   measurement. The benchmark is a Phase 1 item.

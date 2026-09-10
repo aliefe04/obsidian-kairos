@@ -220,23 +220,26 @@ export interface EngineOptions {
 	sendScheduled?: (message: OutboundMessage, record: ReminderRecord) => Promise<DeliveryResult>;
 	onDeliver?: (record: ReminderRecord, message: OutboundMessage, result: DeliveryResult) => void;
 	clearScheduled?: (instanceId: string) => Promise<void>;
-	/** How far ahead a server-scheduled push is worth sending. */
-	serverScheduleHorizonMs?: number;
 	hash?: HashFn;
 	leaseTtlMs?: number;
 	dedupeWindowMs?: number;
 }
 
-/** A week covers the "day ahead" workflow without scheduling the whole year. */
-export const DEFAULT_SERVER_SCHEDULE_HORIZON_MS = 7 * 24 * 60 * 60 * 1000;
+/** First retry delay after a rejected registration, doubling per attempt. */
+export const SCHEDULE_BACKOFF_BASE_MS = 60 * 1000;
+
+/** Ceiling for that backoff, so a doomed registration retries four times a day. */
+export const SCHEDULE_BACKOFF_MAX_MS = 6 * 60 * 60 * 1000;
 
 export interface ServerScheduleResult {
 	/** Instances mirrored to a server-scheduled channel in this pass. */
 	sent: string[];
 	/** Instances whose pending push was cancelled. */
 	cleared: string[];
-	/** Instances the server refused; retried on the next pass. */
+	/** Instances the server refused in this pass. */
 	failed: string[];
+	/** Live instances skipped because an earlier refusal is still in backoff. */
+	deferred: string[];
 }
 
 export interface TickResult {
@@ -264,6 +267,8 @@ export class ScheduleEngine {
 	private readonly recentFires = new Map<string, number>();
 	private firedIds = new Set<string>();
 	private scheduledPushes = new Set<string>();
+	/** Registrations the provider refused, with the time they may be retried. */
+	private scheduleBackoff = new Map<string, { attempts: number; retryAt: number }>();
 	private loaded = false;
 
 	constructor(private readonly options: EngineOptions) {}
@@ -704,12 +709,16 @@ export class ScheduleEngine {
 	 * the last pass has its pending push cleared.
 	 */
 	async syncServerScheduled(now = this.options.clock()): Promise<ServerScheduleResult> {
-		const result: ServerScheduleResult = { sent: [], cleared: [], failed: [] };
+		const result: ServerScheduleResult = { sent: [], cleared: [], failed: [], deferred: [] };
 		const send = this.options.sendScheduled;
 		if (!send) {
 			return result;
 		}
-		const horizon = now + (this.options.serverScheduleHorizonMs ?? DEFAULT_SERVER_SCHEDULE_HORIZON_MS);
+		// Bounded by the provider's own limit: ntfy.sh refuses a delay longer than
+		// three days (`message-delay-limit`), so the default is three days and a
+		// self-hosting user can raise it. The settings object is mutated in place,
+		// so a change takes effect on the next pass.
+		const horizon = now + this.options.settings.serverScheduleHorizonDays * 24 * 60 * 60 * 1000;
 		const live = new Set<string>();
 		for (const record of this.snapshot()) {
 			if (record.state !== "scheduled" && record.state !== "armed") {
@@ -719,16 +728,26 @@ export class ScheduleEngine {
 			if (!Number.isFinite(due) || due <= now || due > horizon) {
 				continue;
 			}
+			// Live before the backoff check: a deferred instance must keep its slot,
+			// or the clear pass below would cancel a push that is still wanted.
 			live.add(record.instanceId);
+			const backoff = this.scheduleBackoff.get(record.instanceId);
+			if (backoff !== undefined && backoff.retryAt > now) {
+				result.deferred.push(record.instanceId);
+				continue;
+			}
 			const message = this.messageFor(record, now, 0, record.severity, false);
 			try {
 				const outcome = await send(message, record);
 				if (outcome.ok) {
+					this.scheduleBackoff.delete(record.instanceId);
 					result.sent.push(record.instanceId);
 				} else {
+					this.noteScheduleFailure(record.instanceId, now);
 					result.failed.push(record.instanceId);
 				}
 			} catch {
+				this.noteScheduleFailure(record.instanceId, now);
 				result.failed.push(record.instanceId);
 			}
 		}
@@ -740,7 +759,24 @@ export class ScheduleEngine {
 			result.cleared.push(instanceId);
 		}
 		this.scheduledPushes = live;
+		for (const instanceId of [...this.scheduleBackoff.keys()]) {
+			if (!live.has(instanceId)) {
+				this.scheduleBackoff.delete(instanceId);
+			}
+		}
 		return result;
+	}
+
+	/**
+	 * A refused registration is not retried on every pass. Passes happen on every
+	 * index change, ack, snooze, rescan and start, so an instant retry would spend
+	 * the provider's quota on a request that is known to fail — and a reminder due
+	 * beyond the provider's delay limit fails every time until it comes inside it.
+	 */
+	private noteScheduleFailure(instanceId: string, now: number): void {
+		const attempts = (this.scheduleBackoff.get(instanceId)?.attempts ?? 0) + 1;
+		const delay = Math.min(SCHEDULE_BACKOFF_BASE_MS * 2 ** (attempts - 1), SCHEDULE_BACKOFF_MAX_MS);
+		this.scheduleBackoff.set(instanceId, { attempts, retryAt: now + delay });
 	}
 
 	private async clearPush(instanceId: string): Promise<void> {

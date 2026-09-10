@@ -73,6 +73,13 @@ Design rules for every push channel:
    (`X-Sequence-ID` + `clear()`), so a done task does not buzz the phone an hour later.
 4. **A `Test notification` command** that fans out to every configured channel, plus a title-only
    default, because a user who cannot see what will leave their device will not turn the channel on.
+5. **The horizon is the provider's limit, not ours.** The default is three days, which is `ntfy.sh`'s
+   documented maximum delay (`message-delay-limit`). A reminder due beyond it is not registered at
+   all, because the server would refuse it. A refusal is remembered: the next attempt waits 1 minute,
+   then 2, 4, 8, doubling to a ceiling of 6 hours. Passes happen on every index change, ack, snooze,
+   rescan and start, so an instant retry would spend the provider's quota on a request that is known
+   to fail — and a refusal caused by the horizon fails every time until the reminder comes inside it.
+   Self-hosting users raise the horizon in the settings.
 
 ## T4 — Self-hosted relay (Phase 3, opt-in)
 

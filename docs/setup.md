@@ -49,6 +49,11 @@ a chosen time, which is what lets the alert arrive while Obsidian is closed.
    - **ntfy server** — `https://ntfy.sh`, or your own server
    - **ntfy topic** — the string from step 2
    - **Ntfy access token** — leave empty for `ntfy.sh`
+   - **Push scheduling horizon (days)** — 3 by default
+
+   The horizon is three days because `ntfy.sh` refuses a longer delay. Raise it only if you run your
+   own server with a larger limit; a longer horizon against the public server means every far-off
+   reminder is refused, and Kairos backs off rather than retrying in a loop.
 
    The push priority is stored at its default, which is *high*, and is not exposed as a setting yet.
 4. Run **Test notification** from the command palette. The push must arrive on the phone.
