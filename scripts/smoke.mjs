@@ -16,6 +16,7 @@ const ROOT = resolve(import.meta.dirname, "..");
 const VAULT = join(ROOT, ".testvault");
 const PROFILE = "/tmp/kairos-profile";
 const PLUGIN_DIR = join(VAULT, ".obsidian", "plugins", "kairos");
+const DAILY_FOLDER = "journal";
 const OBSIDIAN = "/Applications/Obsidian.app/Contents/MacOS/Obsidian";
 const CDP_PORT = 9333;
 
@@ -46,12 +47,12 @@ async function prepareVault() {
 	// Previous runs leave notes behind; a stale note is a legitimate catch-up
 	// reminder on the next launch, which would make the exactly-once assertion
 	// measure the wrong thing.
-	await rm(join(VAULT, "journal"), { recursive: true, force: true });
+	await rm(join(VAULT, DAILY_FOLDER), { recursive: true, force: true });
 	await writeFile(join(VAULT, ".obsidian", "community-plugins.json"), JSON.stringify(["kairos"], null, 2));
 	await writeFile(join(VAULT, ".obsidian", "app.json"), "{}");
 	await writeFile(
 		join(VAULT, ".obsidian", "daily-notes.json"),
-		JSON.stringify({ folder: "journal", format: "YYYY/DD-MM-YYYY-dddd", template: "" }, null, 2),
+		JSON.stringify({ folder: DAILY_FOLDER, format: "YYYY/DD-MM-YYYY-dddd", template: "" }, null, 2),
 	);
 	// Pin the plugin's settings so this harness does not depend on the hour it runs
 	// at. The production defaults fold an alarm inside quiet hours (22:00 → 07:00)
@@ -224,6 +225,18 @@ async function main() {
 			throw new Error("the scratch vault did not take the pinned settings");
 		}
 
+		// The diagnostics line must name the folder the resolver actually uses. It once
+		// said "(detected)" whenever the setting was empty, even when nothing had been
+		// detected — the state a device lands in when the vault's Daily notes
+		// configuration never synced to it, where no dated note resolves and nothing
+		// says so.
+		const diagnostics = await cdp.evaluate("app.plugins.plugins.kairos.diagnostics()");
+		report.diagnostics = diagnostics;
+		report.steps.push({
+			step: "diagnostics name the folder its resolver uses",
+			ok: typeof diagnostics === "string" && diagnostics.includes(`daily notes folder ${DAILY_FOLDER}`),
+		});
+
 		const now = new Date();
 		const pad = (value) => String(value).padStart(2, "0");
 		const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -237,7 +250,7 @@ async function main() {
 		// `YYYY/DD-MM-YYYY-dddd` format from `.obsidian/daily-notes.json`) and the
 		// body carries no H1 date, so the date-resolution path under test is the
 		// production one rather than a spelling only the harness uses.
-		const notePath = `journal/${past.getFullYear()}/${pad(past.getDate())}-${pad(past.getMonth() + 1)}-${past.getFullYear()}-${weekdays[past.getDay()]}.md`;
+		const notePath = `${DAILY_FOLDER}/${past.getFullYear()}/${pad(past.getDate())}-${pad(past.getMonth() + 1)}-${past.getFullYear()}-${weekdays[past.getDay()]}.md`;
 		const body = `- [ ] smoke test ${wall}\n`;
 		const cachedItems = await cdp.evaluate(
 			`(async () => {

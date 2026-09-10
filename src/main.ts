@@ -537,6 +537,21 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 		}
 	}
 
+	/**
+	 * The folder the resolver actually uses. This line read "(detected)" whenever the
+	 * setting was empty, even when nothing had been detected — the case that leaves a
+	 * device resolving no dated notes at all, with no other sign of it, because the
+	 * configured formats are matched against the path relative to this folder.
+	 */
+	private dailyNotesSummary(): string {
+		const folder = this.settings.dailyNotesFolder.trim();
+		const format = this.dailyNotesFormat.trim();
+		const formatText = format.length > 0 ? format : "(defaults)";
+		return folder.length > 0
+			? `daily notes folder ${folder}, format ${formatText}`
+			: `daily notes folder not set and none detected: dated notes under a subfolder will not resolve. Set Daily notes folder. Format ${formatText}`;
+	}
+
 	diagnostics(): string {
 		const engine = this.engine;
 		const records = engine?.snapshot() ?? [];
@@ -545,7 +560,7 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 			`device ${this.deviceId}, platform ${Platform.isMobileApp ? "mobile" : "desktop"}, tz ${this.tzId()},`,
 			`records ${records.length}, channels ${this.registry.names().join(", ")},`,
 			this.pushSummary(),
-			`daily notes folder ${this.settings.dailyNotesFolder || "(detected)"}, format ${this.dailyNotesFormat || "(default)"}`,
+			this.dailyNotesSummary(),
 		].join("\n");
 	}
 
