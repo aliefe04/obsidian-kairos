@@ -321,6 +321,41 @@ describe("one registration per server-scheduled channel", () => {
 		expect(h.store.instances.get(id)?.state).toBe("cancelled");
 	});
 
+	it("schedules a line again when it comes back, unless its time has passed", async () => {
+		const h = harness({ now: NOW });
+		const future = parsedReminder({ dueLocal: "2026-09-11T09:00" });
+		const past = parsedReminder({ dueLocal: "2026-09-11T08:00", sourcePath: "journal/2026/11-09-2026-Friday.md" });
+		await h.engine.sync([future, past]);
+		const futureId = h.engine.instanceIdOf(future);
+		const pastId = h.engine.instanceIdOf(past);
+		await h.engine.syncServerScheduled(NOW);
+		expect(h.calendar.clearedPushIds).toEqual([]);
+
+		// Both lines are deleted — a mistake, or a tick — so both reminders are
+		// cancelled and their entries withdrawn.
+		await h.engine.sync([]);
+		await h.engine.syncServerScheduled(NOW);
+		expect(h.store.instances.get(futureId)?.state).toBe("cancelled");
+		expect(h.store.instances.get(pastId)?.state).toBe("cancelled");
+
+		// Undo. The block id comes back with the text, so these are the same instances.
+		const back = await h.engine.sync([future, past]);
+		expect(back.updated).toBeGreaterThanOrEqual(1);
+		// The one still ahead of us is scheduled again, so it registers and will ring.
+		expect(h.store.instances.get(futureId)?.state).toBe("scheduled");
+		// The one whose time has gone stays cancelled: reviving it would deliver the
+		// reminder a second time through the catch-up fire.
+		expect(h.store.instances.get(pastId)?.state).toBe("cancelled");
+
+		const pass = await h.engine.syncServerScheduled(NOW);
+		expect(pass.sent).toEqual([futureId]);
+		// Both channels registered it again, each with its own id.
+		const pushes = h.store.instances.get(futureId)?.pushIds ?? {};
+		expect(Object.keys(pushes).sort()).toEqual(["calendar", "ntfy"]);
+		expect(pushes["ntfy"]).toBeTruthy();
+		expect(pushes["calendar"]).toBeTruthy();
+	});
+
 	it("migrates the pre-channel push id of an existing record", async () => {
 		const first = harness();
 		const reminder = parsedReminder({ dueLocal: "2026-09-11T09:00" });

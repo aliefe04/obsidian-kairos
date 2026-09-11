@@ -90,7 +90,10 @@ export const DEFAULT_SETTINGS: KairosSettings = {
 	completingStatusChars: "xX-",
 	annotateInNote: false,
 	stateLocation: "plugin-dir",
-	vaultStateFolder: ".kairos",
+	// Visible on purpose: sync tools (LiveSync, iCloud, Syncthing) commonly skip
+	// dot-folders, and this folder is exactly what has to reach the other device for
+	// two of them to share one registration bookkeeping.
+	vaultStateFolder: "kairos",
 	locale: "en",
 	includeNoteName: false,
 	desktopEnabled: true,
@@ -457,7 +460,7 @@ export class KairosSettingTab extends PluginSettingTab {
 					dropdownDef(
 						"stateLocation",
 						"State location",
-						"`plugin-dir` keeps state in the plugin folder. `vault-folder` puts it inside the vault so services such as iCloud, OneDrive or Syncthing sync it too.",
+						"`plugin-dir` keeps state in the plugin folder, where only this device can see it. `vault-folder` puts it inside the vault so the sync service carries it to your other devices — which is what two devices writing the same reminders need, so they share one registration instead of each making its own. Keep the folder name visible (no leading dot): sync tools commonly skip dot-folders.",
 						["state", "sync", "folder", "icloud"],
 						{ "plugin-dir": "Plugin folder", "vault-folder": "Vault folder" },
 					),

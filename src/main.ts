@@ -9,6 +9,7 @@
 import { Notice, Platform, Plugin, TFile, type WorkspaceLeaf } from "obsidian";
 import { createDesktopChannel } from "./channels/desktop";
 import { createIcsChannel, type IcsEvent } from "./channels/ics";
+import { loadVaultId } from "./vaultId";
 import { createCalDavChannel } from "./channels/caldav";
 import { createNtfyChannel } from "./channels/ntfy";
 import { ChannelRegistry, combinedResult, describeError, type ChannelContext, type DeliveryResult, type OutboundMessage } from "./channels/types";
@@ -178,8 +179,14 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 	async loadSettings(): Promise<void> {
 		const stored = (await this.loadData()) as unknown;
 		this.settings = normalizeSettings(stored);
-		if (this.settings.vaultId.length === 0) {
-			this.settings.vaultId = randomId();
+		// Read from the vault, not from this device's settings: the id names every
+		// registration the plugin makes, and two devices syncing one vault have to
+		// agree on it or each writes its own copy of the same reminder. A value
+		// already in settings is written out rather than replaced, so a vault that
+		// has been running keeps the ids its state files refer to.
+		const vaultId = await loadVaultId(this.app.vault.adapter, this.settings.vaultStateFolder, this.settings.vaultId, randomId);
+		if (vaultId !== this.settings.vaultId) {
+			this.settings.vaultId = vaultId;
 			await this.saveSettings();
 		}
 	}

@@ -3,6 +3,41 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] — 2026-09-11
+
+### Added
+
+- **The vault's identity is kept in the vault, not in each device's settings.** A reminder's instance
+  id — and so the name of every registration made from it — is derived partly from the vault id, so
+  two devices writing one vault have to agree on it or each makes its own copy of the same reminder:
+  two tasks in Reminders for one line, each device able to withdraw only the one it wrote. The id now
+  lives at `<state folder>/vault-id`, where a vault sync carries it to the other device. A value
+  already in `data.json` is written out rather than replaced, so a vault that has been in use keeps
+  the ids its state files and server entries are named after.
+
+### Changed
+
+- **The vault state folder's default name is now visible (`kairos`).** Sync tools commonly skip
+  dot-folders, so a state folder named `.kairos` is the one that does not reach a second device — and
+  that folder is exactly what two devices writing one vault have to share: with a private state
+  folder the two engines are independent, both register every reminder, the phone rings twice for one
+  line, and the lease cannot fence a double fire. `State location` selects whether state is shared at
+  all (`plugin-dir`, still the default, keeps it to this device; `vault-folder` puts it in the vault),
+  and the folder name applies when it is in the vault. A vault already running keeps the name it has.
+
+### Fixed
+
+- **A reminder that fired while Obsidian was closed left a calendar entry nothing could withdraw.**
+  The catch-up fire publishes through the channels but stores no handle, so when the line was later
+  completed or deleted there was nothing to delete by — the task stayed in Reminders for good. A
+  departure with no handle now asks the channels that own a real entry (`deleteAfterDue`) to sweep
+  their collection for that instance.
+- **A line that came back was not scheduled again.** Deleting a line, or ticking it off, cancels its
+  reminder; undoing either is ordinary, and the block id returns with the text, so it is the same
+  instance. A cancelled record whose due time is still ahead returns to `scheduled` and registers
+  again. One whose time has gone stays cancelled: reviving it would deliver the reminder a second
+  time through the catch-up fire.
+
 ## [0.1.3] — 2026-09-11
 
 ### Added
@@ -218,6 +253,7 @@ plugin directory yet: install it from this release, or with BRAT (`aliefe04/obsi
 - The performance target for large vaults (10,000 notes under 1.5 seconds) is a target, not yet a
   measurement. The benchmark is a Phase 1 item.
 
+[0.1.4]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.3...0.1.4
 [0.1.3]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.2...0.1.3
 [0.1.2]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.1...0.1.2
 [0.1.1]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.0...0.1.1

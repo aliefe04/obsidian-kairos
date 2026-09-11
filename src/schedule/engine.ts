@@ -527,6 +527,22 @@ export class ScheduleEngine {
 					touched = true;
 					result.updated += 1;
 				}
+				// A line that comes back is scheduled again. Deleting a line, or ticking
+				// it off, cancels its reminder, and undoing either is ordinary — the block
+				// id returns with the text, so it is the same instance and the record has
+				// to come back with it. Only while its time is still ahead: reviving a due
+				// time that has passed would deliver the reminder a second time through
+				// the catch-up fire, which is what the registration bookkeeping exists to
+				// prevent. A reminder the user acknowledged or muted is not revived
+				// either — that was a deliberate answer, not a departure.
+				if (existing.state === "cancelled") {
+					const due = recordEpochMs(existing, this.options.tzId);
+					if (Number.isFinite(due) && due > now) {
+						existing.state = "scheduled";
+						touched = true;
+						result.updated += 1;
+					}
+				}
 				if (touched) {
 					existing.updatedAt = now;
 					await this.options.store.writeInstance(existing);

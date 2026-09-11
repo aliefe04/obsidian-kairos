@@ -155,6 +155,32 @@ Whichever you pick, the collection URL the channel is given must be the URL the
 holds a different address, the two are still the same account only if the server
 is the same one — so use one URL everywhere.
 
+## Two devices, one vault
+
+A reminder's instance id — and so the name of every registration made from it —
+is derived partly from the vault's identity, and the record that says a reminder
+has already been registered lives in the state folder. Two devices writing the
+same vault therefore have to agree on **both**, or each makes and keeps its own
+copy of the same reminder: one line becomes two tasks in Reminders, two pushes on
+the phone, and neither device can withdraw the other's entry.
+
+- **The identity is in the vault**, at `<state folder>/vault-id`. A vault sync
+  carries it, so both devices derive the same ids. A value already in the plugin's
+  `data.json` is written out rather than replaced, so an existing vault keeps the
+  ids its state files and server entries are named after.
+- **Share the state folder.** `State location` → **Vault folder**, with a
+  **visible** folder name (the default is `kairos`): sync tools commonly skip
+  dot-folders, and a state folder that does not arrive on the second device
+  leaves the two engines independent.
+- Whether `.obsidian` syncs is not something to rely on either way. The plugin's
+  own settings may travel with a sync service's internal-file support while the
+  vault folder does not, or the reverse; the vault folder is the one to check.
+
+To tell whether the second device is sharing rather than duplicating, look in the
+vault's state folder: it holds a `state/devices/<id>.json` per device that has
+registered something, and a reminder registered by the other device already has
+its push ids, so it is not published a second time.
+
 ## The iPhone
 
 Two URLs are in play and they are not the same one. The **plugin** wants the
@@ -193,6 +219,9 @@ the principal (`http://192.168.1.56:5232/kairos/`), then as the collection
 | **A `VTODO` with a `VALARM` actually alarms on iOS** | **Not verified.** No one involved can measure it from outside an iPhone. Treat the alarm as unconfirmed until a reminder written on the Mac rings on the phone at its due minute (`docs/risks.md`, R15) |
 | The channel against the deployed server, over the network | Verified from another machine with the plugin's own code: bootstrap, Turkish title folded and escaped, one resource after a due-time move, `404` after the delete. The account it authenticated with was created with **bcrypt** (`$2b$12$`) by the one-liner above, so that path is exercised, not just written down |
 | Registration ahead of time, withdrawal on completion | Engine-level, covered by `tests/schedule.perChannelPush.test.ts`: an entry stays while its line is in the note — including after it has fired, since Reminders is where the user ticks it off — and is deleted when the line goes, when the reminder is muted, or when it is acknowledged |
+| Registration and withdrawal against the deployed server | Verified live: a line added to a dated note registered on both channels in one pass and landed as a `VTODO` on the server, and deleting the line withdrew it (the resource was gone from the collection on the next listing) |
+| A fire that wrote the entry holding no handle | Verified live: the caught-up entry is swept by instance id when its line departs, since there is no handle to withdraw by |
+| The vault id is written where a sync will carry it | Verified live: a real Obsidian wrote `<vault folder>/vault-id` on first launch, and both that file and the state folder were present in the sync database for the second device to pull |
 
 The cheap way to settle the last line: write `- [ ] test 5 minutes from now
 09:00` into a dated note, let Kairos register it, close Obsidian, and wait. If the
