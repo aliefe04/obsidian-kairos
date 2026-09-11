@@ -117,6 +117,19 @@ describe("createCalDavChannel", () => {
 		expect(call?.body).toContain("BEGIN:VTODO");
 	});
 
+	it("drops a trailing line break from the password, which a copy always brings", async () => {
+		// Read out of a file, or echoed by a terminal, every source of a password
+		// ends the line with one, and the settings field shows nothing. Left in, it
+		// answers 401 for a correct password — verified against a real server, where
+		// the same credential with and without it differs by exactly that.
+		const channel = createCalDavChannel();
+		const settings = caldavSettings({ caldavUser: "me", caldavPassword: "app-password\n" });
+		await channel.send(outboundMessage(), channelContext(settings, DUE - 3600_000));
+
+		// The same base64 the clean password produces.
+		expect(requestUrlStub.calls[0]?.headers?.["Authorization"]).toBe("Basic bWU6YXBwLXBhc3N3b3Jk");
+	});
+
 	it("does not claim delivery when the collection is missing", async () => {
 		requestUrlStub.status = 404;
 		const channel = createCalDavChannel();

@@ -120,9 +120,24 @@ stacks under `/opt`:
 | Path | `/opt/radicale/` (`docker-compose.yml`, `config.toml`, `users`, `collections/`, `.caldav-password`) |
 | Image | `tomsquest/docker-radicale:latest`, digest `sha256:0f1b45abed8b…` |
 | Ports | `0.0.0.0:5232` |
-| Password | `/opt/radicale/.caldav-password` (mode 600, root only) — read it there and type it into the phone; it appears nowhere else |
+| Password | `/opt/radicale/.caldav-password` (mode 600, root only). The file ends with a newline: **copy the 28 characters, not the line.** A credential carrying that line break is rejected — measured on this server, the file's bytes answer `401` and the same bytes with `\r`/`\n` removed answer `207`. The plugin drops line breaks from the password for exactly this reason, so it is safe in the plugin's own field, but the iOS account field gets no such help |
 | Collection URL (the plugin setting) | `http://192.168.1.56:5232/kairos/kairos/` — created ahead of time with an authenticated `MKCALENDAR` (`201`, then `PROPFIND` `207`) and named with `PROPPATCH`, so Reminders shows a list called *Kairos* as soon as the account is added, without waiting for a first reminder |
-| Account URL (the iOS setting) | `http://192.168.1.56:5232/` — the **server**, not the collection. iOS asks for `current-user-principal` and finds the collection itself; measured on this server, `/` answers `/kairos/` as the principal and `/kairos/` lists `kairos/kairos`. Pointing the account at the collection path instead is the usual cause of "CalDAV Account Verification Failed" |
+| Account URL (the iOS setting) | `https://192.168.1.56:5233/kairos/` — the **server**, not the collection, and over **TLS**. iOS asks for `current-user-principal` and finds the collection itself; measured on this server, `/` answers `/kairos/` as the principal and `/kairos/` lists `kairos/kairos`. Pointing the account at the collection path instead is the usual cause of "CalDAV Account Verification Failed" |
+| TLS front | `caddy-kairos` (`caddy:2-alpine`, `network_mode: host`, `/opt/caddy/`), `https://192.168.1.56:5233` → `127.0.0.1:5232`, certificate from Caddy's local CA (`tls internal`). Radicale itself is untouched on 5232, which is what the plugin on the desktop uses — see *Reachability* for why this front is required and not optional |
+| CA certificate | Served for installation at `http://192.168.1.56:5234/kairos-ca.crt` from the same container, so installing it does not depend on another machine being awake. A public key: nothing secret is exposed by serving it |
+
+**The account cannot authenticate over plain HTTP — measured.** With the account
+pointed at `http://192.168.1.56:5232/`, the phone's own DAV clients reached the
+server and were refused, without ever presenting the password: eleven `PROPFIND`
+requests from the phone (`iOS/26.3 accountsd`, `remindd`, `dataaccessd`) each
+logged `Access to '/kairos/' denied for anonymous user`, answered `401`, and
+**not one** produced a `207`. The server side is not in question — the same
+requests with credentials answer `207` at every step, anonymously answer
+`401` with a correct `WWW-Authenticate: Basic` challenge, and both the root and
+the principal were probed. iOS issues the unauthenticated request and then
+declines to send the password over a cleartext connection. HTTPS is therefore
+required, not a nicety; the local-CA front above is the smallest way to provide
+it on a LAN.
 
 Verified over the network from another machine with the channel's own code (not
 `curl`): the collection was created on the first write, a Turkish title survived
@@ -137,14 +152,24 @@ tunnel, so it is left for a deliberate decision rather than done quietly.
 
 ## Reachability
 
-iOS's CalDAV account setup assumes TLS. A plain `http://…:5232/…` endpoint is
-reachable in practice only if you turn off *Use SSL* in the account's advanced
-settings, which is fiddly and easy to get wrong. Prefer a name iOS already
-trusts:
+**Use SSL off does not work — measured, not assumed.** The account was added
+against `http://192.168.1.56:5232/` with *Use SSL* off and an explicit port, and
+verification failed: iOS `PROPFIND`s arrived anonymously and were refused, with
+no credential ever presented (see the deployment table above). An earlier version
+of this recipe presented that combination as "fiddly but workable". It was never
+measured, and it is wrong. Treat TLS as a requirement and provide it one of these
+ways:
 
+- **Local CA (what this deployment does)**: Caddy in front of `127.0.0.1:5232`
+  with `tls internal` on a second port, and its root certificate installed and
+  trusted once on the phone. No domain, no public exposure, works on a LAN. The
+  catch is the two-step trust: install the profile, *then* enable it under
+  **Settings → General → About → Certificate Trust Settings**. Skipping the
+  second step leaves a certificate the phone still refuses.
 - **On a tailnet**: `tailscale serve --bg 5232` gives the machine a
-  `https://<host>.<tailnet>.ts.net/` name with a certificate iOS accepts, and the
-  phone reaches it from anywhere it has the tailnet up.
+  `https://<host>.<tailnet>.ts.net/` name with a certificate iOS already trusts,
+  so nothing has to be installed on the phone. Prefer this when the machine is on
+  a tailnet: it is less work and reaches the phone from anywhere.
 - **On a VPS with a domain**: a Caddy or nginx reverse proxy in front of
   `127.0.0.1:5232` with a Let's Encrypt certificate.
 - **LAN only**: bind to the LAN address and accept that reminders written away
@@ -154,6 +179,11 @@ Whichever you pick, the collection URL the channel is given must be the URL the
 **phone** will use. If the plugin registers through `127.0.0.1` and the phone
 holds a different address, the two are still the same account only if the server
 is the same one — so use one URL everywhere.
+
+A TLS front also gives the one piece of evidence a failing account otherwise
+hides: its access log records every request's host, status and whether a
+credential was presented at all, which is what separates "the phone cannot reach
+the server" from "the phone reached it and would not authenticate".
 
 ## Two devices, one vault
 
@@ -189,24 +219,34 @@ collection (`…/kairos/kairos/`); the **iOS account** wants the server
 asking for the current user principal. Pointing the account at the collection is
 the usual cause of *"CalDAV Account Verification Failed"*.
 
-1. **Settings → Reminders → Reminders Accounts → Add Account → Other → Add
+1. **Install the CA certificate first.** In Safari on the phone, open
+   `http://192.168.1.56:5234/kairos-ca.crt` → *Allow* the profile → **Settings →
+   Profile Downloaded → Install** → then **Settings → General → About →
+   Certificate Trust Settings** and switch on *Caddy Local Authority*. Both steps
+   are required; the profile alone leaves a certificate the phone still refuses.
+2. **Settings → Reminders → Reminders Accounts → Add Account → Other → Add
    CalDAV Account.** (Under Reminders, not under Calendar — that is where the
    lists end up.)
-2. Server: `192.168.1.56` — the address the **phone's own network** can reach.
-   User name and password as created above.
-3. **Next** will fail on TLS, because the server speaks plain HTTP. That is
-   expected: go **Back → Advanced Settings**, turn **Use SSL off**, set **Port**
-   `5232`, and set the account URL to `http://192.168.1.56:5232/kairos/`.
-4. When asked which apps to use the account with, tick **Reminders**.
-5. Open Reminders: a list called **Kairos** is there, and tasks written by Kairos
+3. Server: `192.168.1.56` — the address the **phone's own network** can reach, and
+   the one the certificate is issued for. User name `kairos`, password: paste the
+   28 characters from `/opt/radicale/.caldav-password` without the trailing line
+   break.
+4. **Next** should now succeed. If it does not, go **Back → Advanced Settings**
+   and confirm **Use SSL on**, **Port** `5233`, and the account URL
+   `https://192.168.1.56:5233/kairos/`. Over plain `http://…:5232` it cannot
+   work: iOS does not present the password on a cleartext connection, which is
+   measured and explained under *Reachability*.
+5. When asked which apps to use the account with, tick **Reminders**.
+6. Open Reminders: a list called **Kairos** is there, and tasks written by Kairos
    arrive in it.
 
-**Check the network path in Safari first.** Open `http://192.168.1.56:5232/` on the
-phone. If Safari cannot load it, the account never will — fix the network (same
-LAN, or the WireGuard profile the server already runs) before retrying.
+**Check the network path in Safari first.** Open `https://192.168.1.56:5233/` on
+the phone (after installing the certificate). If Safari cannot load it, the
+account never will — fix the network (same LAN, or the WireGuard profile the
+server already runs) before retrying.
 
 If Reminders shows no list after a *successful* login, retry the account URL as
-the principal (`http://192.168.1.56:5232/kairos/`), then as the collection
+the principal (`https://192.168.1.56:5233/kairos/`), then as the collection
 (`…/kairos/kairos/`).
 
 ## What is verified, and what still needs the phone

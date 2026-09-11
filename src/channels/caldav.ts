@@ -56,9 +56,18 @@ function configured(settings: KairosSettings): boolean {
 /**
  * Basic credentials, UTF-8 safe. `btoa` alone throws on any character above
  * U+00FF, and an app password is not guaranteed to be ASCII.
+ *
+ * Line breaks are dropped: a password is routinely copied out of a file or a
+ * terminal, and every one of those sources ends the line with one. A trailing
+ * newline inside the credential is invisible in the settings field, and it makes
+ * the server reject an otherwise correct password — `pass\n` answers `401` where
+ * `pass` answers `207` on the same endpoint, which reads as a wrong password and
+ * sends the user looking for the fault in the wrong place. Spaces are kept: a
+ * password may legitimately contain one, and a header cannot contain a line break
+ * in any case, so nothing valid is lost.
  */
 function basicAuth(user: string, password: string): string {
-	const bytes = new TextEncoder().encode(`${user}:${password}`);
+	const bytes = new TextEncoder().encode(`${user}:${password.replace(/[\r\n]/gu, "")}`);
 	let binary = "";
 	for (const byte of bytes) {
 		binary += String.fromCharCode(byte);
