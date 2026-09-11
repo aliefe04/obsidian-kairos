@@ -243,8 +243,10 @@ the usual cause of *"CalDAV Account Verification Failed"*.
    `http://192.168.1.56:5234/kairos-ca.crt` (or `…192.168.3.56…` — see below)
    → *Allow* the profile → **Settings → Profile Downloaded → Install** → then
    **Settings → General → About → Certificate Trust Settings** and switch on
-   *Caddy Local Authority*. Both steps are required; the profile alone leaves a
-   certificate the phone still refuses.
+   *Kairos Local CA*. Both steps are required; the profile alone leaves a
+   certificate the phone still refuses. (An earlier attempt on this deployment
+   installed *Caddy Local Authority* instead; if that entry is still in the list,
+   enabling it changes nothing — the served root is `Kairos Local CA`.)
 2. **Settings → Reminders → Reminders Accounts → Add Account → Other → Add
    CalDAV Account.** (Under Reminders, not under Calendar — that is where the
    lists end up.)
