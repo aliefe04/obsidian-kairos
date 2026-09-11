@@ -22,19 +22,34 @@ beforeEach(() => {
 
 describe("buildNtfyRequest", () => {
 	it("posts the title to the topic with the schedule and dedupe headers", () => {
-		const request = buildNtfyRequest(ntfySettings(), outboundMessage(), { now: DUE - 60 * 60 * 1000, includeNoteName: false });
+		const now = DUE - 60 * 60 * 1000;
+		const request = buildNtfyRequest(ntfySettings(), outboundMessage(), { now, includeNoteName: false });
 		expect(request.url).toBe("https://ntfy.sh/kairos-topic");
 		expect(request.method).toBe("POST");
 		expect(request.headers["X-Title"]).toBe("msg to dentist");
 		expect(request.headers["X-Priority"]).toBe("4");
-		expect(request.headers["X-At"]).toBe("3600");
+		expect(request.headers["X-At"]).toBe(String(Math.round(DUE / 1000)));
 		expect(request.headers["X-Sequence-ID"]).toBe("instance-1");
 		expect(request.body).toBe("msg to dentist");
 	});
 
+	it("schedules at an absolute time, not a bare count of seconds", () => {
+		// The header has to be a Unix timestamp or a duration with a unit. A count of
+		// seconds is neither: `X-At: 3600` is a moment in 1970, and the server answers
+		// `400 invalid delay parameter`, so nothing is ever scheduled — which is how a
+		// phone quietly stops ringing. Asserting the number is ahead of now is what
+		// makes this test fail for that form.
+		const now = DUE - 60 * 60 * 1000;
+		const header = Number(buildNtfyRequest(ntfySettings(), outboundMessage(), { now, includeNoteName: false }).headers["X-At"]);
+		expect(Number.isInteger(header)).toBe(true);
+		expect(header).toBeGreaterThan(Math.floor(now / 1000));
+		expect(header).toBe(Math.round(DUE / 1000));
+	});
+
 	it("never schedules a push closer than the server accepts", () => {
-		const request = buildNtfyRequest(ntfySettings(), outboundMessage(), { now: DUE - 2000, includeNoteName: false });
-		expect(Number(request.headers["X-At"])).toBe(MIN_SERVER_DELAY_SECONDS);
+		const now = DUE - 2000;
+		const request = buildNtfyRequest(ntfySettings(), outboundMessage(), { now, includeNoteName: false });
+		expect(Number(request.headers["X-At"])).toBe(Math.floor(now / 1000) + MIN_SERVER_DELAY_SECONDS);
 	});
 
 	it("sends the title alone unless the note name is opted in", () => {
@@ -61,7 +76,8 @@ describe("buildNtfyRequest", () => {
 describe("createNtfyChannel", () => {
 	it("posts the alert through the Obsidian request API", async () => {
 		const settings = ntfySettings();
-		const result = await createNtfyChannel().send(outboundMessage(), channelContext(settings, DUE - 60 * 60 * 1000));
+		const now = DUE - 60 * 60 * 1000;
+		const result = await createNtfyChannel().send(outboundMessage(), channelContext(settings, now));
 		expect(result.ok).toBe(true);
 		expect(requestUrlStub.calls).toHaveLength(1);
 		const call = requestUrlStub.calls[0];
@@ -69,7 +85,7 @@ describe("createNtfyChannel", () => {
 		expect(call?.method).toBe("POST");
 		expect(call?.headers?.["X-Title"]).toBe("msg to dentist");
 		expect(call?.headers?.["X-Priority"]).toBe("4");
-		expect(call?.headers?.["X-At"]).toBe("3600");
+		expect(call?.headers?.["X-At"]).toBe(String(Math.round(DUE / 1000)));
 		expect(call?.headers?.["X-Sequence-ID"]).toBe("instance-1");
 		expect(call?.body).toBe("msg to dentist");
 	});

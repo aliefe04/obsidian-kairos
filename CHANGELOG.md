@@ -5,6 +5,39 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-09-11
+
+### Fixed
+
+- **The phone push tier never scheduled anything.** `X-At` was sent as a count of seconds (`"3600"`),
+  which `ntfy` accepts as neither a timestamp nor a duration: it answered
+  `400 invalid delay parameter`, so every registration was refused. The desktop alerted normally and
+  the phone stayed silent, which is the one failure this tier exists to prevent. The header is now an
+  absolute Unix timestamp — also what the server compares against, so a device clock a few seconds out
+  cannot move an alert. Verified against `ntfy.sh` by posting both forms: the count was rejected, the
+  timestamp was accepted, and it arrived at the second it named.
+- The diagnostics line reported `daily notes folder (detected)` even when nothing had been detected —
+  the state a device lands in when the vault's Daily notes configuration never synced to it, where no
+  dated note resolves and nothing says so. It now names the folder in use, or says there is none and
+  what to set.
+- A format containing `dddd` rendered `11-09-2026-friday.md`, while Obsidian's own daily-note command
+  writes `...-Friday.md`, because the renderer reused the locale pack's lower-cased lookup table.
+  **Add reminder** could therefore ask for a second note beside the one Obsidian made. The packs now
+  carry the display spelling, read from Obsidian's own bundled moment, for `en` and `tr`.
+
+### Added
+
+- A **Test notification** button in the Channels group. The specification promised one per channel and
+  the code had none: the only way to send a test was a command nobody could find.
+
+### Changed
+
+- The smoke harness pins its settings before relying on them, waits for the daily-notes folder to be
+  adopted instead of racing it, and asserts the diagnostics line it prints.
+- The daily-note path is tested in both directions: rendered for a date, then read back through the
+  parser, for every shipped locale and every default format including the leap day. That pair is how a
+  fix in one direction can silently break the other.
+
 ## [0.1.0] — 2026-09-10
 
 The first version. Built and tested against Obsidian 1.13.7 on macOS. It is not in the community
@@ -76,5 +109,6 @@ plugin directory yet: install it from this release, or with BRAT (`aliefe04/obsi
 - The performance target for large vaults (10,000 notes under 1.5 seconds) is a target, not yet a
   measurement. The benchmark is a Phase 1 item.
 
-[Unreleased]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.0...HEAD
+[Unreleased]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.1...HEAD
+[0.1.1]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/aliefe04/obsidian-kairos/releases/tag/0.1.0

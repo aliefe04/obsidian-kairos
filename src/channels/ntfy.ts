@@ -45,8 +45,14 @@ export function buildNtfyRequest(settings: KairosSettings, message: OutboundMess
 		"Content-Type": "text/plain; charset=utf-8",
 	};
 	// The server holds the push until the due time, so it survives a closed app.
-	const secondsUntilDue = Math.round((message.dueEpochMs - options.now) / 1000);
-	headers["X-At"] = String(Math.max(MIN_SERVER_DELAY_SECONDS, secondsUntilDue));
+	// `X-At` takes an absolute Unix timestamp or a duration carrying a unit; a bare
+	// integer is neither, and sending a count of seconds answered `400 invalid delay
+	// parameter`, so every registration this channel made was refused and the phone
+	// never rang. An absolute time is also what the server compares against, so a
+	// device clock that is a few seconds out cannot move the alert.
+	const dueSeconds = Math.round(message.dueEpochMs / 1000);
+	const soonest = Math.floor(options.now / 1000) + MIN_SERVER_DELAY_SECONDS;
+	headers["X-At"] = String(Math.max(dueSeconds, soonest));
 	if (settings.ntfyToken.trim().length > 0) {
 		headers["Authorization"] = `Bearer ${settings.ntfyToken.trim()}`;
 	}

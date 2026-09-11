@@ -167,6 +167,14 @@ it. New entries go at the end.
   without rebuilding the engine. Six tests pin the horizon and the backoff ladder, including that a
   jump of exactly the cap length retries and that an instance which leaves the index stops being
   tracked.
+- **The header form is part of the contract, and it shipped wrong.** `X-At` accepts an absolute Unix
+  timestamp or a duration carrying a unit; a bare integer is neither. This sent a count of seconds
+  (`"3600"`), which the server refused with `400 invalid delay parameter` — every registration failed,
+  so the tier that exists to alert a phone with the app closed had never scheduled a single alert,
+  while the desktop alert made the failure invisible. The fix is an absolute timestamp, verified
+  against `ntfy.sh` by posting both forms and confirming the accepted one arrived at the second it
+  named. The test that came with the defect asserted the rejected form, which is the general lesson:
+  an assertion written from the implementation pins the bug rather than the protocol.
 
 ## 13. Quiet hours are applied at parse time, by one implementation
 
