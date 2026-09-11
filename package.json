@@ -1,6 +1,6 @@
 {
   "name": "obsidian-kairos",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Turns journal checkboxes into real alerts.",
   "private": true,
   "scripts": {

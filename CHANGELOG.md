@@ -3,6 +3,30 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] — 2026-09-11
+
+### Fixed
+
+- **A password pasted with its line break was rejected as wrong.** A password is almost always copied
+  out of a file or echoed by a terminal, and every one of those sources ends the line with a break.
+  The settings field shows nothing, the server answers `401`, and the failure reads as a wrong
+  password — measured on the deployed server: the password file's own bytes answer `401`, the same
+  bytes with the breaks removed answer `207`. The CalDAV password was the one credential passed
+  through untouched (`ntfy`'s token was already trimmed); it now drops line breaks, and keeps spaces,
+  which a password may legitimately contain and a header cannot confuse with a break.
+
+### Documentation
+
+- **An iOS account cannot authenticate over plain HTTP — measured, and previously described as
+  workable.** With the account pointed at `http://…:5232/` and *Use SSL* off, the phone's DAV clients
+  reached the server and were refused without ever presenting the password: requests from `accountsd`,
+  `remindd` and `dataaccessd` were each logged `denied for anonymous user`, answered `401`, and not
+  one produced a `207` — while the same requests carrying credentials answer `207` at every step. The
+  recipe now states TLS as a requirement and documents the smallest way to provide it on a LAN: a
+  Caddy front with a local CA on a second port, its root certificate served for installation, and the
+  two-step trust (install the profile, then enable it under *Certificate Trust Settings*) that
+  skipping leaves a certificate the phone still refuses.
+
 ## [0.1.4] — 2026-09-11
 
 ### Added
@@ -253,6 +277,7 @@ plugin directory yet: install it from this release, or with BRAT (`aliefe04/obsi
 - The performance target for large vaults (10,000 notes under 1.5 seconds) is a target, not yet a
   measurement. The benchmark is a Phase 1 item.
 
+[0.1.5]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.4...0.1.5
 [0.1.4]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.3...0.1.4
 [0.1.3]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.2...0.1.3
 [0.1.2]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.1...0.1.2
