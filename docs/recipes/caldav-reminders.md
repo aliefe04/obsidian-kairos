@@ -123,8 +123,8 @@ stacks under `/opt`:
 | Password | `/opt/radicale/.caldav-password` (mode 600, root only). The file ends with a newline: **copy the 28 characters, not the line.** A credential carrying that line break is rejected — measured on this server, the file's bytes answer `401` and the same bytes with `\r`/`\n` removed answer `207`. The plugin drops line breaks from the password for exactly this reason, so it is safe in the plugin's own field, but the iOS account field gets no such help |
 | Collection URL (the plugin setting) | `http://192.168.1.56:5232/kairos/kairos/` — created ahead of time with an authenticated `MKCALENDAR` (`201`, then `PROPFIND` `207`) and named with `PROPPATCH`, so Reminders shows a list called *Kairos* as soon as the account is added, without waiting for a first reminder |
 | Account URL (the iOS setting) | `https://192.168.1.56:5233/kairos/` — the **server**, not the collection, and over **TLS**. iOS asks for `current-user-principal` and finds the collection itself; measured on this server, `/` answers `/kairos/` as the principal and `/kairos/` lists `kairos/kairos`. Pointing the account at the collection path instead is the usual cause of "CalDAV Account Verification Failed" |
-| TLS front | `caddy-kairos` (`caddy:2-alpine`, `network_mode: host`, `/opt/caddy/`), `https://192.168.1.56:5233` → `127.0.0.1:5232`, certificate from Caddy's local CA (`tls internal`). Radicale itself is untouched on 5232, which is what the plugin on the desktop uses — see *Reachability* for why this front is worth having |
-| Addresses | The box has one interface, `192.168.1.56`. `192.168.3.56` also reaches it, through the router, and that is the address this deployment's phone was showing. The front is configured for **both**, and an **IP-literal client sends no SNI** — so the certificate cannot be chosen per name the way Caddy's `tls internal` would. The leaf is therefore issued ahead of time carrying **both** addresses in its SAN (`/opt/caddy/issue-cert.sh`, reissued with `sh issue-cert.sh` then a restart), and loaded with `tls <cert> <key>`; a no-SNI handshake is what to check, since that is what a client using a bare IP performs |
+| TLS front | `caddy-kairos` (`caddy:2-alpine`, `network_mode: host`, `/opt/caddy/`), `https://192.168.1.56:5233` and `https://192.168.3.56:5233` → `127.0.0.1:5232`, serving a leaf from **this deployment's own CA** (`/opt/caddy/kairos-ca.sh`; root ten years, leaf two years, both addresses in the leaf's SAN) loaded with `tls <cert> <key>`. Radicale itself is untouched on 5232, which is what the plugin on the desktop uses. **Not** `tls internal`: that issues one certificate per name, which a no-SNI client cannot choose between, and Caddy's local authority signs with a short-lived intermediate it rotates (measured: seven days, against a leaf claiming two years) — a hand-signed leaf would break the installed chain a week later with nothing changed on this side. Refresh with `sh /opt/caddy/kairos-ca.sh` then a restart; the root is reused, so the certificate already on the phone keeps working. `sh /opt/caddy/tls-check.sh` prints what a client actually receives |
+| Addresses | The box has one interface, `192.168.1.56`. `192.168.3.56` also reaches it, through the router, and that is the address this deployment's phone was showing. The front is configured for **both**, and an **IP-literal client sends no SNI** — so the certificate cannot be chosen per name the way Caddy's `tls internal` would. The leaf is therefore issued ahead of time carrying **both** addresses in its SAN (`/opt/caddy/kairos-ca.sh`) and loaded with `tls <cert> <key>`; a no-SNI handshake is what to check, since that is what a client using a bare IP performs |
 | CA certificate | Served for installation at `http://192.168.1.56:5234/kairos-ca.crt` from the same container, so installing it does not depend on another machine being awake. A public key: nothing secret is exposed by serving it |
 
 **Observed: over plain HTTP the account never authenticated.** With the account
@@ -173,12 +173,15 @@ not a general rule about HTTP — it is what this deployment did, with the cause
 still open. What TLS does buy regardless is observability, and it removes the
 transport from the list of suspects. Provide it one of these ways:
 
-- **Local CA (what this deployment does)**: Caddy in front of `127.0.0.1:5232`
-  with `tls internal` on a second port, and its root certificate installed and
-  trusted once on the phone. No domain, no public exposure, works on a LAN. The
-  catch is the two-step trust: install the profile, *then* enable it under
-  **Settings → General → About → Certificate Trust Settings**. Skipping the
-  second step leaves a certificate the phone still refuses.
+- **A local CA (what this deployment does)**: Caddy in front of `127.0.0.1:5232`
+  on a second port, serving a leaf from the deployment's own CA, with the CA root
+  installed and trusted once on the phone. No domain, no public exposure, works on
+  a LAN. Two details that are easy to get wrong and were both measured here: the
+  root needs **two steps** — install the profile, *then* enable it under
+  **Settings → General → About → Certificate Trust Settings**, since skipping the
+  second leaves a certificate the phone still refuses; and the leaf has to cover
+  **every** address the phone might use, because a client connecting to a bare IP
+  sends no SNI and `tls internal` can only issue one name per certificate.
 - **On a tailnet**: `tailscale serve --bg 5232` gives the machine a
   `https://<host>.<tailnet>.ts.net/` name with a certificate iOS already trusts,
   so nothing has to be installed on the phone. Prefer this when the machine is on
