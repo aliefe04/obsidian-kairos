@@ -147,10 +147,16 @@ describe("createNtfyChannel", () => {
 		expect(result.detail).toContain("500");
 	});
 
-	it("clears nothing when the channel is not configured", async () => {
+	it("withdraws a scheduled push even after the channel is switched off", async () => {
+		// Switching the channel off must not strand the push it already scheduled:
+		// the record still holds the message id, and the alert the user thought they
+		// had cancelled would arrive with nothing left able to withdraw it. The
+		// stored server and topic are all the delete needs.
 		const channel = createNtfyChannel();
 		expect(typeof channel.clear).toBe("function");
-		await channel.clear?.("instance-1", channelContext(ntfySettings({ ntfyEnabled: false }), DUE));
-		expect(requestUrlStub.calls).toEqual([]);
+		await channel.clear?.("instance-1", channelContext(ntfySettings({ ntfyEnabled: false }), DUE), "push-1");
+		expect(requestUrlStub.calls).toHaveLength(1);
+		expect(requestUrlStub.calls[0]?.method).toBe("DELETE");
+		expect(requestUrlStub.calls[0]?.url).toBe("https://ntfy.sh/kairos-topic/push-1");
 	});
 });

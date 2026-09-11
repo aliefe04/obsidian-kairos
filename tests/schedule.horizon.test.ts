@@ -21,12 +21,14 @@ const DUE = Date.UTC(2026, 8, 11, 9, 0);
 interface Recorder {
 	attempts: number;
 	failNext: number;
+	/** The withdrawal each clear carried, ids included. */
+	withdrawn: Array<{ instanceId: string; pushIds?: Array<{ channelId: string; pushId?: string }> }>;
 }
 
 type HorizonHarness = EngineHarness & { recorder: Recorder };
 
 function harness(options: { now: number; horizonDays?: number }): HorizonHarness {
-	const recorder: Recorder = { attempts: 0, failNext: 0 };
+	const recorder: Recorder = { attempts: 0, failNext: 0, withdrawn: [] };
 	const engine = makeEngine({
 		now: options.now,
 		...(options.horizonDays === undefined ? {} : { settings: { serverScheduleHorizonDays: options.horizonDays } }),
@@ -41,6 +43,10 @@ function harness(options: { now: number; horizonDays?: number }): HorizonHarness
 		// The provider the horizon exists for: no ceiling of its own, so the settings
 		// value decides, exactly as it did before channels could differ.
 		scheduledChannels: () => [{ id: "fake-server", configured: true }],
+		clearScheduled: (instanceId, pushIds) => {
+			recorder.withdrawn.push({ instanceId, pushIds });
+			return Promise.resolve();
+		},
 	});
 	return { ...engine, recorder };
 }
@@ -137,21 +143,25 @@ describe("server scheduling backoff", () => {
 		expect(h.recorder.attempts).toBe(13);
 	});
 
-	it("stops tracking an instance once it leaves the index", async () => {
+	it("stops tracking an instance once it leaves the index, withdrawing what it held", async () => {
 		const now = DUE - HOUR;
 		const h = harness({ now });
 		const reminder = parsedReminder({ dueLocal: "2026-09-11T09:00" });
 		await h.engine.sync([reminder]);
-		h.recorder.failNext = 1;
+		const id = h.engine.instanceIdOf(reminder);
 		await h.engine.syncServerScheduled(now);
+		// Registered once, so there is a real registration for the departure to take
+		// back — an empty list would let this test pass while proving nothing.
+		expect(h.store.instances.get(id)?.pushIds).toEqual({ "fake-server": "push-0" });
+		expect(h.recorder.withdrawn).toEqual([]);
 
 		await h.engine.sync([]);
 		const after = await h.engine.syncServerScheduled(now + 1000);
 		expect(after.deferred).toEqual([]);
-		// Leaving the index cancels the instance through `sync`; the registration
-		// that failed left nothing on the server for the pass to withdraw.
+		// Leaving the index cancels the instance through `sync`, and the pass that
+		// follows finds nothing of its own left to do.
 		expect(after.cleared).toEqual([]);
-		expect(h.cleared).toContain(h.engine.instanceIdOf(reminder));
+		expect(h.recorder.withdrawn).toEqual([{ instanceId: id, pushIds: [{ channelId: "fake-server", pushId: "push-0" }] }]);
 	});
 
 	it("never delays the next attempt past the due time", async () => {

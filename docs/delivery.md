@@ -78,7 +78,7 @@ Design rules for every push channel:
      publishes nothing. A pass also reads its clock once it is the only one running, so a pass that
      waited behind a slow registration cannot treat a due time that has already begun as still ahead.
    - **A fire already covered by a registration is never published again.** The record remembers the
-     `dueLocal` its push was made for (`pushFor`), so the fire for that due time — delivering at the
+     `dueLocal` its registrations were made for (`pushFor`), so the fire for that due time — delivering at the
      minute, or catching up on launch — goes to the `local` channels only. Publishing it again would
      deliver a second copy: `ntfy` clamps a schedule that has already begun to ten seconds out
      (`MIN_SERVER_DELAY_SECONDS`), so the "duplicate" lands ten seconds *after* the alert it
@@ -95,10 +95,10 @@ Design rules for every push channel:
      re-keying a reminder withdraws its pending push by message id. Once that due time has passed the
      delete is not sent: the provider has delivered the push or is about to, and `ntfy`'s clients read
      a delete of a delivered notification as the user dismissing it on the phone. The registration is
-     dropped from the record (`pushId`/`pushFor`) so no later pass repeats it, and the message is left
+     dropped from the record (`pushIds`/`pushFor`), per channel, so no later pass repeats it, and the message is left
      to the provider. Only a due time still ahead is a cancellation worth sending. A record still
      `scheduled` or `armed` is not retired at all, however its due time now reads: it is about to
-     fire, and that catch-up fire reads `pushFor` to learn the provider already holds a push for its
+     fire, and that catch-up fire reads `pushFor` to learn a provider already holds a push for its
      due time, so retiring the marker first would turn the fire into a second push. The pass that runs
      after the fire — the record has left that set by then — is the one that drops the marker, still
      without a delete.

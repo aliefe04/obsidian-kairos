@@ -9,6 +9,7 @@
 import { Notice, Platform, Plugin, TFile, type WorkspaceLeaf } from "obsidian";
 import { createDesktopChannel } from "./channels/desktop";
 import { createIcsChannel, type IcsEvent } from "./channels/ics";
+import { createCalDavChannel } from "./channels/caldav";
 import { createNtfyChannel } from "./channels/ntfy";
 import { ChannelRegistry, combinedResult, describeError, type ChannelContext, type DeliveryResult, type OutboundMessage } from "./channels/types";
 import { VaultIndexer, type ScanSummary } from "./index/indexer";
@@ -233,6 +234,7 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 	private registerChannels(): void {
 		this.registry.register(createDesktopChannel({ app: this.app }));
 		this.registry.register(createNtfyChannel());
+		this.registry.register(createCalDavChannel());
 		this.registry.register(
 			createIcsChannel({
 				plugin: this,

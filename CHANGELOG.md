@@ -3,6 +3,34 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **A CalDAV channel, so a reminder can reach an iPhone's Reminders app.** One `VTODO` per reminder,
+  with an absolute alarm at the due instant, written into a collection you name. A CalDAV account
+  added in iOS Settings surfaces that collection as a list, so the phone alarms with Obsidian
+  closed. The resource name is derived from the instance id, so an edited due time updates the task
+  in place instead of leaving the old one to fire as well, and a cancelled reminder is deleted from
+  the instance id alone. A collection that does not exist yet is created on the first write
+  (`MKCALENDAR`; Radicale answers a `PUT` into a missing collection with `409`). Registration,
+  withdrawal and deletion verified against a real Radicale. Setup: `docs/recipes/caldav-reminders.md`.
+- **Each server-scheduled channel keeps its own registration.** The record held a single push id, so
+  two channels enabled at once meant one channel's registration could never be withdrawn: a
+  completed task still rang the phone. A channel now also states its own horizon — `ntfy.sh` refuses
+  a delay beyond three days, a calendar takes a year — and whether a registration whose due time has
+  passed should be deleted (never for `ntfy`, whose clients read that as a dismissal; always for a
+  channel that owns a real entry). Existing records migrate their id to `ntfy`.
+
+### Fixed
+
+- **Every channel refused left a reminder covered by nothing.** A pass whose registrations were all
+  refused still recorded the due time as covered, so the catch-up fire went to the local channels
+  only and the phone that never received the push stayed silent.
+- **Unticking a channel left its registration stranded.** Withdrawal is now derived from the entries
+  the record itself holds rather than from the configured channels, and `ntfy`'s cancellation no
+  longer requires the channel to still be enabled — the stored server and topic are enough.
+
 ## [0.1.2] — 2026-09-11
 
 ### Fixed

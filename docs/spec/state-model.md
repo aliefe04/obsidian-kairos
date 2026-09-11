@@ -47,7 +47,10 @@ interface ReminderRecord {
   state: 'scheduled' | 'armed' | 'notified' | 'snoozed' | 'acked' | 'muted' | 'missed' | 'cancelled';
   snoozeCount: number;
   supersedes?: string;         // predecessor instanceId when born from a snooze
-  pushId?: string;             // message id of the pending server-side push
+  pushId?: string;             // legacy, single-channel: migrated to `pushIds` on load
+  pushIds?: Record<string, string>; // message id of the pending registration, per channel id;
+                                    // "" means registered but the provider returned no handle
+  pushFor?: string;            // the dueLocal those registrations were made for
   pushFor?: string;            // the dueLocal value the push was registered for
   lease?: { deviceId: string; seq: number; expiresAt: number };
   firedBy: string[];           // deviceIds

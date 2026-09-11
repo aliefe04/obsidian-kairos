@@ -42,7 +42,8 @@ Three properties are load-bearing:
 | `schedule/engine.ts` | Due plan, lease, dedupe, catch-up, snooze, ack, server-schedule mirroring |
 | `schedule/stateStore.ts` | Durability layout; the only module that writes plugin state |
 | `channels/types.ts` | `DeliveryChannel` with `mode: 'local' \| 'server-scheduled'` — the extension point |
-| `channels/{desktop,ntfy,ics}.ts` | The three shipped channels |
+| `channels/{desktop,ntfy,caldav,ics}.ts` | The shipped channels: desktop notifications, an ntfy push, a CalDAV task list and an in-vault calendar file |
+| `channels/ical.ts` | The iCalendar primitives the two calendar channels share, so there is one folding rule, not two |
 | `ui/*`, `settings.ts`, `main.ts` | Surfaces; `settings.ts` uses the declarative 1.13 API so settings are searchable |
 
 ## 3. Invariants

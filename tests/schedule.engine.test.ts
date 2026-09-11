@@ -134,20 +134,45 @@ describe("ScheduleEngine tick", () => {
 	});
 
 	it("spares a snooze successor from cancellation but cancels a plain record that left the index", async () => {
-		const h = makeEngine({ now: DUE });
+		// The withdrawal each path issues, with the id it carried: the inline cancel in
+		// `sync` and the snooze's own are the only two routes to the channel outside the
+		// push pass, and an empty list would pass here without proving either.
+		const withdrawn: Array<{ instanceId: string; pushIds?: Array<{ channelId: string; pushId?: string }> }> = [];
+		const h = makeEngine({
+			now: DUE,
+			clearScheduled: (instanceId, pushIds) => {
+				withdrawn.push({ instanceId, pushIds });
+				return Promise.resolve();
+			},
+		});
 		const kept = parsedReminder({ dueLocal: DUE_LOCAL });
 		const gone = parsedReminder({ dueLocal: "2026-09-11T10:00", sourcePath: "journal/2026/12-09-2026-Saturday.md" });
 		await h.engine.sync([kept, gone]);
 		const keptId = h.engine.instanceIdOf(kept);
 		const goneId = h.engine.instanceIdOf(gone);
 		expect((await h.engine.tick()).fired).toEqual([keptId]);
+		// The registrations a push pass would have left behind.
+		const keptRecord = h.store.instances.get(keptId);
+		const goneRecord = h.store.instances.get(goneId);
+		if (keptRecord !== undefined) {
+			keptRecord.pushIds = { ntfy: "push-kept" };
+		}
+		if (goneRecord !== undefined) {
+			goneRecord.pushIds = { ntfy: "push-gone" };
+		}
+		// The engine keeps its own copy of every record, so the store has to be read
+		// back before the injected registrations are the ones it withdraws.
+		await h.engine.load();
 
 		const snoozed = await h.engine.snooze(keptId, 50);
 		const after = await h.engine.sync([kept]);
 
 		expect(after.cancelled).toBe(1);
 		expect(h.store.instances.get(goneId)?.state).toBe("cancelled");
-		expect(h.cleared).toContain(goneId);
+		expect(withdrawn).toEqual([
+			{ instanceId: keptId, pushIds: [{ channelId: "ntfy", pushId: "push-kept" }] },
+			{ instanceId: goneId, pushIds: [{ channelId: "ntfy", pushId: "push-gone" }] },
+		]);
 		expect(h.store.instances.get(snoozed?.newInstanceId ?? "")?.state).toBe("scheduled");
 	});
 

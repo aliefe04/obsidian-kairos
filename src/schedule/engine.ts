@@ -949,22 +949,25 @@ export class ScheduleEngine {
 			}
 			const message = this.messageFor(record, now, 0, record.severity, false);
 			try {
+				// A due time the record no longer carries makes every id it holds stale.
+				// They go *before* the new registration, not after: a channel may name a
+				// registration after the instance rather than after the due time — a
+				// calendar entry keyed by `instanceId` must, since it has to be
+				// removable from the instance alone — and withdrawing afterwards would
+				// delete the entry that was just written. Guarded on there being
+				// something to withdraw: `pushesFor` answers `undefined` for an empty
+				// record, which the channels read as "sweep", and a first registration
+				// is not a departure.
+				if (!current && record.pushIds !== undefined) {
+					await this.clearPush(record.instanceId, this.pushesFor(record));
+					this.forgetPushes(record);
+				}
 				const outcomes = await send(message, record, pending.map((channel) => channel.id));
 				const refused = outcomes.filter((outcome) => !outcome.result.ok).length;
 				if (refused === 0) {
 					this.scheduleBackoff.delete(record.instanceId);
 				} else {
 					this.noteScheduleFailure(record.instanceId, now, due);
-				}
-				// A due time the record no longer carries makes every id it holds stale:
-				// those registrations are still pending on the providers and must be
-				// withdrawn, or the old time would fire beside the new one. Guarded on
-				// there being something to withdraw — `pushesFor` answers `undefined` for
-				// an empty record, which the channels read as "sweep", and a first
-				// registration is not a departure.
-				if (!current && record.pushIds !== undefined) {
-					await this.clearPush(record.instanceId, this.pushesFor(record));
-					this.forgetPushes(record);
 				}
 				this.rememberPushes(record, outcomes);
 				// `pushFor` is the flag that tells the fire path a provider is holding
@@ -1081,7 +1084,12 @@ export class ScheduleEngine {
 	 * nothing left that can withdraw it.
 	 */
 	private pushesFor(record: ReminderRecord): Array<{ channelId: string; pushId?: string }> | undefined {
-		const entries = Object.entries(record.pushIds ?? {}).map(([channelId, pushId]) => ({ channelId, pushId }));
+		const entries = Object.entries(record.pushIds ?? {}).map(([channelId, pushId]) => ({
+			channelId,
+			// A registration with no handle is withdrawn by the instance id, which is
+			// the only name the channel and the engine both know.
+			pushId: pushId.length > 0 ? pushId : undefined,
+		}));
 		return entries.length > 0 ? entries : undefined;
 	}
 
@@ -1090,13 +1098,23 @@ export class ScheduleEngine {
 		delete record.pushFor;
 	}
 
-	/** Records the ids a pass was handed, keeping the ones it already had. */
+	/**
+	 * Records the ids a pass was handed, keeping the ones it already had.
+	 *
+	 * An empty string is a registration whose provider returned no handle — an
+	 * EventKit reminder written through `osascript`, say. It has to be recorded
+	 * anyway: "no id" means "cannot be withdrawn by handle", not "not registered",
+	 * and leaving it out would republish that reminder on every pass, because every
+	 * pass would find the channel still outstanding. `pushesFor` turns the empty
+	 * string back into `undefined`, which is what a channel reads as "withdraw by
+	 * whatever you name it after".
+	 */
 	private rememberPushes(record: ReminderRecord, outcomes: ChannelDelivery[]): void {
 		for (const outcome of outcomes) {
-			if (!outcome.result.ok || outcome.result.id === undefined) {
+			if (!outcome.result.ok) {
 				continue;
 			}
-			record.pushIds = { ...(record.pushIds ?? {}), [outcome.channelId]: outcome.result.id };
+			record.pushIds = { ...(record.pushIds ?? {}), [outcome.channelId]: outcome.result.id ?? "" };
 		}
 	}
 

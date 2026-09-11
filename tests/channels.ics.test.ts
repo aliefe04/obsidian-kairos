@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildIcs, escapeIcsText, foldLine, type IcsEvent } from "../src/channels/ics";
+import { buildIcs, type IcsEvent } from "../src/channels/ics";
+import { escapeIcsText, foldLine } from "../src/channels/ical";
 
 const EVENT: IcsEvent = {
 	uid: "9f2c0a7d",

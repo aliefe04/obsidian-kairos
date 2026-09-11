@@ -77,7 +77,7 @@ Five properties the incumbents do not have together. Each is implemented (not pl
 | Parse | `src/parse/{timeTokens,noteDate,parseNote,locales}` | Token grammar, the date cascade, `metadataCache` list items → `ParsedReminder[]` |
 | Index | `src/index/indexer.ts` | Incremental vault scan, debounced per-file reparse, ambiguity reporting |
 | Schedule | `src/schedule/{engine,time,stateStore}` | Due plan, single next-wake timer, lease, dedupe, catch-up, snooze, durability |
-| Deliver | `src/channels/{desktop,ntfy,ics}`, `src/ui/*` | Channel SDK with `local` and `server-scheduled` modes; modal with done/snooze; agenda view |
+| Deliver | `src/channels/{desktop,ntfy,caldav,ics}`, `src/ui/*` | Channel SDK with `local` and `server-scheduled` modes; modal with done/snooze; agenda view |
 | Surface | `src/settings.ts`, `src/main.ts` | Declarative settings (searchable), commands, wiring |
 
 Invariants and failure modes: `docs/architecture.md`. Measured limits: §9.

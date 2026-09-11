@@ -48,6 +48,16 @@ export interface KairosSettings {
 	icsEnabled: boolean;
 	icsPath: string;
 	icsAlarmMinutesBefore: number;
+	/** A CalDAV collection of tasks: the path into an iPhone's Reminders app. */
+	caldavEnabled: boolean;
+	/**
+	 * Absolute URL of the collection, for example
+	 * `https://cloud.example.com/remote.php/dav/calendars/me/tasks/`. The trailing
+	 * slash is optional; everything after it is the resource name.
+	 */
+	caldavUrl: string;
+	caldavUser: string;
+	caldavPassword: string;
 }
 
 export const DEFAULT_FORMATS = [
@@ -94,6 +104,10 @@ export const DEFAULT_SETTINGS: KairosSettings = {
 	// ntfy.sh rejects a longer delay (`message-delay-limit`), and a refusal is a
 	// wasted request against the provider's quota.
 	serverScheduleHorizonDays: 3,
+	caldavEnabled: false,
+	caldavUrl: "",
+	caldavUser: "",
+	caldavPassword: "",
 	icsEnabled: false,
 	icsPath: "kairos.ics",
 	icsAlarmMinutesBefore: 0,
@@ -158,6 +172,10 @@ export function normalizeSettings(raw: unknown): KairosSettings {
 		ntfyToken: coerceString(data["ntfyToken"], DEFAULT_SETTINGS.ntfyToken),
 		ntfyPriority: coerceNumber(data["ntfyPriority"], DEFAULT_SETTINGS.ntfyPriority, 1, 5),
 		serverScheduleHorizonDays: coerceNumber(data["serverScheduleHorizonDays"], DEFAULT_SETTINGS.serverScheduleHorizonDays, 1, 30),
+		caldavEnabled: coerceBoolean(data["caldavEnabled"], DEFAULT_SETTINGS.caldavEnabled),
+		caldavUrl: coerceString(data["caldavUrl"], DEFAULT_SETTINGS.caldavUrl),
+		caldavUser: coerceString(data["caldavUser"], DEFAULT_SETTINGS.caldavUser),
+		caldavPassword: coerceString(data["caldavPassword"], DEFAULT_SETTINGS.caldavPassword),
 		icsEnabled: coerceBoolean(data["icsEnabled"], DEFAULT_SETTINGS.icsEnabled),
 		icsPath: coerceString(data["icsPath"], DEFAULT_SETTINGS.icsPath),
 		icsAlarmMinutesBefore: coerceNumber(data["icsAlarmMinutesBefore"], DEFAULT_SETTINGS.icsAlarmMinutesBefore, 0, 1440),
@@ -230,6 +248,11 @@ const TRIMMED_KEYS = {
 	ntfyServer: true,
 	ntfyTopic: true,
 	ntfyToken: true,
+	caldavUrl: true,
+	caldavUser: true,
+	// `caldavPassword` is deliberately absent: a password can contain meaningful
+	// leading or trailing space, and trimming it on save would corrupt the one
+	// credential the user cannot see they mistyped.
 	icsPath: true,
 } satisfies Partial<Record<keyof KairosSettings, true>>;
 
@@ -240,6 +263,7 @@ const TRIMMED_KEYS = {
 const VISIBILITY_KEYS = {
 	desktopEnabled: true,
 	ntfyEnabled: true,
+	caldavEnabled: true,
 	icsEnabled: true,
 	quietHoursEnabled: true,
 	stateLocation: true,
@@ -527,6 +551,40 @@ export class KairosSettingTab extends PluginSettingTab {
 						{ min: 1, max: 30, step: 1 },
 						() => this.host.settings.ntfyEnabled,
 					),
+					toggleDef(
+						"caldavEnabled",
+						"Write tasks to CalDAV",
+						"Keep one task per reminder in a CalDAV collection. A CalDAV account added in iOS Settings shows these in the Reminders app, so a reminder alerts the phone with the app closed.",
+						["calendar", "caldav", "reminders", "iphone", "ios", "mobile"],
+					),
+					textDef(
+						"caldavUrl",
+						"CalDAV collection URL",
+						"Absolute URL of a collection that holds tasks, for example `https://cloud.example.com/remote.php/dav/calendars/me/tasks/`. Radicale uses `http://host:5232/<user>/kairos/`.",
+						["calendar", "caldav", "url", "collection"],
+						() => this.host.settings.caldavEnabled,
+					),
+					textDef(
+						"caldavUser",
+						"CalDAV user",
+						"Account user name. Leave empty for a server that needs no credentials.",
+						["calendar", "caldav", "user", "account"],
+						() => this.host.settings.caldavEnabled,
+					),
+					{
+						name: "CalDAV password",
+						desc: "Account password or app password. Stored as plaintext in this vault's data.json, so sync and backups carry it.",
+						aliases: ["calendar", "caldav", "password", "secret"],
+						visible: () => this.host.settings.caldavEnabled,
+						render: (setting) => {
+							setting.addText((component) => {
+								component.inputEl.setAttribute("type", "password");
+								component.setValue(this.host.settings.caldavPassword).onChange(async (value) => {
+									await this.setControlValue("caldavPassword", value);
+								});
+							});
+						},
+					},
 					toggleDef("icsEnabled", "Write a calendar file", "Keep an iCalendar file up to date inside the vault.", ["calendar", "ics", "export"]),
 					textDef("icsPath", "Calendar file path", "Vault-relative path, for example `kairos.ics`.", ["calendar", "ics", "path"], () =>
 						this.host.settings.icsEnabled,

@@ -5,6 +5,7 @@
 
 import { Plugin } from "obsidian";
 import { describeError, type ChannelContext, type DeliveryChannel, type DeliveryResult, type OutboundMessage } from "./types";
+import { icalUtc, icsText } from "./ical";
 import type { KairosSettings } from "../settings";
 
 export interface IcsEvent {
@@ -24,53 +25,6 @@ export interface IcsBuildOptions {
 
 const CRLF = "\r\n";
 
-export function escapeIcsText(text: string): string {
-	return text
-		.replace(/\\/gu, "\\\\")
-		.replace(/;/gu, "\\;")
-		.replace(/,/gu, "\\,")
-		.replace(/\r?\n/gu, "\\n");
-}
-
-function utf8Length(text: string): number {
-	return new TextEncoder().encode(text).length;
-}
-
-/** Folds at 75 octets without splitting a multi-byte character (RFC 5545 §3.1). */
-export function foldLine(line: string): string[] {
-	if (utf8Length(line) <= 75) {
-		return [line];
-	}
-	const pieces: string[] = [];
-	let current = "";
-	let length = 0;
-	for (const char of line) {
-		const size = utf8Length(char);
-		if (length + size > 75) {
-			pieces.push(current);
-			current = char;
-			length = 1 + size;
-			continue;
-		}
-		current += char;
-		length += size;
-	}
-	if (current.length > 0) {
-		pieces.push(current);
-	}
-	return pieces.map((piece, index) => (index === 0 ? piece : ` ${piece}`));
-}
-
-function icsText(value: string): string {
-	return foldLine(escapeIcsText(value)).join(CRLF);
-}
-
-function stamp(epochMs: number): string {
-	const date = new Date(epochMs);
-	const pad = (value: number): string => String(value).padStart(2, "0");
-	return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
-}
-
 function localStamp(wallClock: string): string {
 	return wallClock.replace(/[-:]/gu, "").replace("T", "T");
 }
@@ -82,7 +36,7 @@ export function buildIcs(events: IcsEvent[], options: IcsBuildOptions): string {
 		const trigger = event.alarmMinutesBefore === 0 ? "PT0M" : `-PT${event.alarmMinutesBefore}M`;
 		lines.push("BEGIN:VEVENT");
 		lines.push(icsText(`UID:${event.uid}@kairos`));
-		lines.push(`DTSTAMP:${stamp(options.nowMs)}`);
+		lines.push(`DTSTAMP:${icalUtc(options.nowMs)}`);
 		lines.push(`DTSTART;TZID=${event.tzId}:${localStamp(event.dueLocal)}00`);
 		lines.push(icsText(`SUMMARY:${event.title}`));
 		if (event.noteName) {

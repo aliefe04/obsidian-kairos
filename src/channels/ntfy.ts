@@ -15,25 +15,9 @@
  * both answer `200` while the push still arrives (verified 2026-09-11, ADR 12).
  */
 
-import { requestUrl } from "obsidian";
 import { describeError, type ChannelContext, type DeliveryChannel, type DeliveryResult, type OutboundMessage } from "./types";
+import { requestUrlTransport, type HttpRequest, type HttpRequestInit, type HttpResponse } from "./http";
 import type { KairosSettings } from "../settings";
-
-export interface HttpRequestInit {
-	url: string;
-	method: string;
-	headers: Record<string, string>;
-	body: string;
-}
-
-export interface HttpResponse {
-	status: number;
-	text?: string;
-	/** The parsed body, when the transport read one. */
-	json?: unknown;
-}
-
-export type HttpRequest = (init: HttpRequestInit) => Promise<HttpResponse>;
 
 export interface NtfyRequestOptions {
 	now: number;
@@ -74,19 +58,6 @@ export function buildNtfyRequest(settings: KairosSettings, message: OutboundMess
 	return { url: topicUrl(settings.ntfyServer, settings.ntfyTopic), method: "POST", headers, body };
 }
 
-const defaultRequest: HttpRequest = async (init) => {
-	const response = await requestUrl({ url: init.url, method: init.method, headers: init.headers, body: init.body, throw: false });
-	let json: unknown;
-	try {
-		// Obsidian parses the body, and an empty or plain-text reply is normal
-		// (`throw: false`), so a body that is not JSON must not become an exception.
-		json = response.json;
-	} catch {
-		json = undefined;
-	}
-	return { status: response.status, text: response.text, json };
-};
-
 /** The id ntfy assigned the message; the only handle observed to cancel a delivery (see the file header — the delete is best-effort). */
 function messageIdOf(response: HttpResponse): string | undefined {
 	const payload = response.json ?? bodyJson(response.text);
@@ -109,7 +80,7 @@ function bodyJson(text: string | undefined): unknown {
 }
 
 export function createNtfyChannel(dependencies: { request?: HttpRequest } = {}): DeliveryChannel {
-	const request = dependencies.request ?? defaultRequest;
+	const request = dependencies.request ?? requestUrlTransport;
 	const configured = (settings: KairosSettings): boolean =>
 		settings.ntfyEnabled && settings.ntfyServer.trim().length > 0 && settings.ntfyTopic.trim().length > 0;
 	return {
@@ -141,7 +112,13 @@ export function createNtfyChannel(dependencies: { request?: HttpRequest } = {}):
 		 * Electron/Chromium's stack, not the undici build that cancelled nothing.
 		 */
 		clear: async (instanceId: string, ctx: ChannelContext, pushId?: string): Promise<void> => {
-			if (!configured(ctx.settings)) {
+			// Deliberately not gated on `isConfigured`: switching the channel off must
+			// not strand a push it already scheduled, or the alert the user thought
+			// they had cancelled still arrives with nothing left able to withdraw it.
+			// The prerequisites, not the enable flag: the stored server and topic are
+			// all a delete needs, and `ntfyEnabled` off is precisely the case where
+			// the user expects the pending alert to go away.
+			if (ctx.settings.ntfyServer.trim().length === 0 || ctx.settings.ntfyTopic.trim().length === 0) {
 				return;
 			}
 			try {
