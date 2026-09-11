@@ -226,10 +226,25 @@ the phone, and neither device can withdraw the other's entry.
   own settings may travel with a sync service's internal-file support while the
   vault folder does not, or the reverse; the vault folder is the one to check.
 
+**This applies to every server-scheduled channel, not just the calendar.** A
+second device with `ntfy` enabled on the same topic duplicates the alert exactly
+the way a second CalDAV writer duplicates the task: each device keeps its own
+record of what it published, so both publish, and the phone rings twice for one
+line. Turning one channel off and leaving the other is not enough.
+
 To tell whether the second device is sharing rather than duplicating, look in the
 vault's state folder: it holds a `state/devices/<id>.json` per device that has
-registered something, and a reminder registered by the other device already has
-its push ids, so it is not published a second time.
+registered something. A reminder registered by the other device already carries
+its push ids — one per channel — and the registration pass skips any channel whose
+id the record already holds, so it is not published a second time. If those per-
+device files are not arriving on the second device, its records are its own and
+every channel it has enabled will publish again.
+
+A shared registry has one window it cannot close: the two devices' records have to
+meet, and a sync takes time, so a reminder written on both devices in the same
+moment can still be registered by each. Nothing local fixes that; it is the reason
+one writer and one reader is the safer arrangement when the sync is not
+instant.
 
 ## The iPhone
 
