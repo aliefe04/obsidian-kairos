@@ -226,11 +226,19 @@ describe("the fire path and the registration that covers it", () => {
 			expect(h.store.instances.get(id)?.pushIds?.["fake-server"]).toBe("push-1");
 			expect(h.store.instances.get(id)?.pushFor).toBe(DUE_LOCAL);
 
-			// Completing the line is what removes it.
-			await h.engine.sync([]);
-			expect(h.server.cleared).toEqual([id]);
-			expect(h.server.clearedPushIds).toEqual(["push-1"]);
+			// Completing the line is what removes it. The departure marks the fired
+			// record cancelled, and the pass that follows retires the registration — a
+			// registration whose due time has passed is a *delivered* notification, and
+			// this channel does not ask for those to be deleted (a delete of a delivered
+			// push reads as the user dismissing it). The task-style channel that does
+			// delete its entries is the case `schedule.perChannelPush.test.ts` drives.
+			const departure = await h.engine.sync([]);
+			expect(departure.cancelled).toBe(1);
+			await h.engine.syncServerScheduled();
+			expect(h.server.cleared).toEqual([]);
+			expect(h.server.clearedPushIds).toEqual([]);
 			expect(h.store.instances.get(id)?.pushFor).toBeUndefined();
+			expect(h.store.instances.get(id)?.pushIds).toBeUndefined();
 		}
 	});
 

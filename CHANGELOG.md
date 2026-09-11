@@ -24,6 +24,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A line written while Obsidian was running never became a reminder.** The note was parsed on the
+  metadata change and stored, but the engine was only told about it by a full rescan — so a reminder
+  typed during a session was ignored until the next launch, rename or delete: no local alert, no
+  registration. The engine is now synced on the change itself, outside a scan (a scan syncs the
+  finished index once, since a per-file sync would look like every other file had been deleted).
+  Covered end to end by a smoke step that writes a line into a running app and watches the engine
+  pick it up.
 - **The phone's task was deleted the moment the reminder fired.** A fired reminder left the
   registration set, so the next pass retired its entry — which for a calendar channel meant deleting
   it. The line is still in the note, unchecked, so the task is still open, and Reminders is where the

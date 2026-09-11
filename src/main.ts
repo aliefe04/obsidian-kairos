@@ -320,7 +320,16 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 		if (!engine || !indexer) {
 			return null;
 		}
-		const summary = await indexer.scanAll();
+		// The scan calls `applyIndex` for every file it reads, and those calls must not
+		// sync the engine: the index is complete only when the scan returns, and the
+		// sync below treats what it is given as complete.
+		this.scanning = true;
+		let summary: ScanSummary;
+		try {
+			summary = await indexer.scanAll();
+		} finally {
+			this.scanning = false;
+		}
 		const result = await engine.sync(this.collectReminders());
 		if (summary.ambiguousNotes.length > 0) {
 			new Notice(`${summary.ambiguousNotes.length} notes could not be date-resolved`, 6000);
@@ -337,9 +346,29 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 			return;
 		}
 		this.remindersByPath.set(normalizeRelPath(path), { reminders, ambiguous });
+		// The engine has to be told, or a line written while the app is running never
+		// becomes a reminder: the map above is only what a *rescan* reads, so without
+		// this the note would be parsed and then ignored until the next launch, rename
+		// or delete.
+		//
+		// Not while a scan is running, though. `scanAll` calls this per file as it goes,
+		// and `engine.sync` treats what it is given as the *complete* index: the first
+		// file of a launch would be the whole index, every record loaded from disk
+		// would look departed, and each would be cancelled and its registration
+		// withdrawn — for good, since a cancelled record is never resurrected. `rescan`
+		// syncs the finished map itself; this path is for a single file changing.
+		if (!this.scanning) {
+			// The order is the launch order: fire what has come due, then register or
+			// withdraw — a fire that finds its registration still on the record reads it
+			// to avoid publishing a second copy of the same due time.
+			await engine.sync(this.collectReminders());
+		}
+		await this.tickNow();
 		await this.syncServerSchedule();
-		void this.tickNow();
 	}
+
+	/** Whether a full scan is in progress, in which case only `rescan` may sync. */
+	private scanning = false;
 
 	private readonly remindersByPath = new Map<string, { reminders: ParsedReminder[]; ambiguous: boolean }>();
 

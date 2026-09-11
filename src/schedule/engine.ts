@@ -486,14 +486,51 @@ export class ScheduleEngine {
 			const existing = this.records.get(instanceId);
 			if (existing) {
 				const titleHash = buildTitleHash(reminder.title, this.options.hash);
+				let touched = false;
 				if (existing.title !== reminder.title || existing.line !== reminder.line || existing.titleHash !== titleHash) {
 					existing.title = reminder.title;
 					existing.line = reminder.line;
 					existing.titleHash = titleHash;
 					existing.severity = reminder.severity;
+					touched = true;
+					result.updated += 1;
+				}
+				// `severity` is recomputed from quiet hours on every parse, so a settings
+				// change has to reach the record or the two disagree for good: a reminder
+				// registered while quiet hours were off would keep its alarm after they
+				// were turned on, and one parsed as a digest would stay silent for a user
+				// who turned them off and now expects it to ring.
+				if (existing.severity !== reminder.severity) {
+					existing.severity = reminder.severity;
+					touched = true;
+					result.updated += 1;
+					// The registration a digest would have had is withdrawn here, because
+					// the push pass skips digests outright and nothing else would take it
+					// back: a provider holding an alarm for a time the user has since asked
+					// to be left alone would ring anyway.
+					if (existing.severity === "digest" && (existing.state === "scheduled" || existing.state === "armed")) {
+						const pushes = this.pushesFor(existing);
+						if (pushes !== undefined) {
+							this.forgetPushes(existing);
+							await this.clearPush(existing.instanceId, pushes);
+						}
+					}
+				}
+				// A successor born from a snooze is owned by state rather than by the
+				// note until the note carries its new time — that is why it is spared
+				// the departure handling above. The moment the note does carry it, the
+				// note owns it and state stops shielding it. Leaving `supersedes` set
+				// would shield it for good: completing that line would never cancel the
+				// instance, and its registration would outlive the line that asked for
+				// it.
+				if (existing.supersedes !== undefined) {
+					delete existing.supersedes;
+					touched = true;
+					result.updated += 1;
+				}
+				if (touched) {
 					existing.updatedAt = now;
 					await this.options.store.writeInstance(existing);
-					result.updated += 1;
 				}
 				continue;
 			}
@@ -552,7 +589,28 @@ export class ScheduleEngine {
 			// what makes completing the checkbox — the ordinary way a reminder ends —
 			// remove the task from the phone, including for one that has already fired
 			// and is kept in the list until now.
-			if (record.state !== "snoozed") {
+			//
+			// `bornFromSnooze` is the exception, and it is the same one the cancel
+			// branch above carves out: a successor's new time exists only in state
+			// until the note is rewritten, so the note still offering the *old* time is
+			// why it is missing from the index, not a reason to strip the registration
+			// it just made. Withdrawing here would delete the push for the new time
+			// while the app is closed, and the phone would never ring.
+			if (!bornFromSnooze && record.state !== "snoozed") {
+				// A registration whose due time has already passed is a *delivered*
+				// notification, not a pending one: what a delete means then differs by
+				// provider, so it goes through the retirement pass, which holds that
+				// per-channel policy. Marking the record `cancelled` is what puts it in
+				// that pass's path — for `ntfy` the push is left alone, because its
+				// clients read a delete of a delivered notification as the user
+				// dismissing it. Only a strictly future registration is withdrawn here.
+				if (record.state === "notified" || record.state === "missed") {
+					record.state = "cancelled";
+					record.updatedAt = now;
+					await this.options.store.writeInstance(record);
+					result.cancelled += 1;
+					continue;
+				}
 				const pushes = this.pushesFor(record);
 				if (pushes !== undefined) {
 					this.forgetPushes(record);

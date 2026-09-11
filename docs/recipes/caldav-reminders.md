@@ -19,9 +19,14 @@ Two facts decide the whole design:
 
 Each reminder becomes one `VTODO` in a collection you name, with an absolute
 `VALARM` at the due instant. The resource name is derived from the instance id
-(`kairos-<instanceId>.ics`), which is what makes an edited due time an update in
-place rather than a second task that fires on the old time as well, and lets a
-cancelled reminder be deleted from the instance id alone.
+(`kairos-<instanceId>.ics`) rather than minted, which makes a repeated write
+rewrite the same task — a pass that cannot tell whether its predecessor landed
+does not leave two behind — and lets a cancelled reminder be deleted from the
+instance id alone, even if no handle was ever stored.
+
+Changing the time in the note is a different instance: the id is derived from the
+time as well as the line, so Kairos withdraws the old task by the id it stored and
+writes the new one. The phone ends up with one task, at the new time.
 
 Verified against a real Radicale (locally, 2026-09-11): `PUT` into a collection
 that does not exist answers `409`, so the channel creates the collection with
@@ -163,7 +168,7 @@ is the same one — so use one URL everywhere.
 
 | Link | Evidence |
 | --- | --- |
-| Write, update in place, delete against a real CalDAV server | Verified locally against Radicale, container log and `PROPFIND` listing: one resource after a due-time move, `404` after the delete |
+| Write, update in place, delete against a real CalDAV server | Verified locally against Radicale, container log and `PROPFIND` listing: a second write of the same instance left one resource, `404` after the delete |
 | A collection that does not exist yet | Verified: `MKCALENDAR` then retry, against an empty server |
 | Third-party CalDAV lists appear in iOS Reminders | Documented by Nextcloud Tasks (client list) and by iOS's account type; not measured here |
 | **A `VTODO` with a `VALARM` actually alarms on iOS** | **Not verified.** No one involved can measure it from outside an iPhone. Treat the alarm as unconfirmed until a reminder written on the Mac rings on the phone at its due minute (`docs/risks.md`, R15) |

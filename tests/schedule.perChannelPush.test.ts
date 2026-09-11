@@ -152,13 +152,14 @@ describe("one registration per server-scheduled channel", () => {
 		expect(h.store.instances.get(id)?.pushIds).toEqual({ ntfy: "ntfy-1", calendar: "calendar-1" });
 
 		// Completing or deleting the line is what removes it: the entry belongs to the
-		// line, and the line is gone. Both channels are asked, each with its own id —
-		// this is a user action ("I am done with this"), which is also why `ntfy`'s
-		// delivered notification may be deleted here while the engine's own retirement
-		// of an expired push leaves it alone.
+		// line, and the line is gone. The record has fired, so its registration counts
+		// as delivered, and the withdrawal goes through the pass — where the channel
+		// that owns a real entry takes it back and `ntfy`, whose clients read a delete
+		// of a delivered notification as a dismissal, is left alone.
 		await h.engine.sync([]);
+		await h.engine.syncServerScheduled(DUE + 61 * 1000);
 		expect(h.calendar.clearedPushIds).toEqual(["calendar-1"]);
-		expect(h.ntfy.clearedPushIds).toEqual(["ntfy-1"]);
+		expect(h.ntfy.clearedPushIds).toEqual([]);
 		expect(h.store.instances.get(id)?.pushIds).toBeUndefined();
 	});
 
@@ -235,6 +236,60 @@ describe("one registration per server-scheduled channel", () => {
 		// Recorded as registered, with no handle: the instance id is what a withdrawal
 		// falls back to.
 		expect(engine.store.instances.get(id)?.pushIds).toEqual({ bare: "" });
+	});
+
+	it("leaves a snooze successor's registration alone while the note still shows the old time", async () => {
+		const h = harness();
+		const reminder = parsedReminder({ dueLocal: "2026-09-11T09:00" });
+		await h.engine.sync([reminder]);
+		const predecessorId = h.engine.instanceIdOf(reminder);
+		await h.engine.syncServerScheduled(NOW);
+		expect(h.calendar.clearedPushIds).toEqual([]);
+
+		// Snoozed fifty minutes: the successor is a new instance whose time exists
+		// only in state until the note is rewritten, so the note still offering the
+		// old time is why it is absent from the index — not a reason to strip what it
+		// registered. A rescan arrives on every index change, including Kairos's own
+		// annotation write, so this happens constantly.
+		const snoozed = await h.engine.snooze(predecessorId, 50);
+		const successorId = snoozed?.newInstanceId ?? "";
+		await h.engine.syncServerScheduled(NOW);
+		expect(h.store.instances.get(successorId)?.pushIds).toEqual({ ntfy: "ntfy-2", calendar: "calendar-2" });
+		// The snooze itself withdrew the predecessor's registration; what matters here
+		// is that the rescan adds nothing to that.
+		const ntfyCleared = [...h.ntfy.clearedPushIds];
+		const calendarCleared = [...h.calendar.clearedPushIds];
+
+		const rescanned = await h.engine.sync([reminder]);
+		expect(rescanned.cancelled).toBe(0);
+		expect(h.ntfy.clearedPushIds).toEqual(ntfyCleared);
+		expect(h.calendar.clearedPushIds).toEqual(calendarCleared);
+		expect(h.store.instances.get(successorId)?.pushIds).toEqual({ ntfy: "ntfy-2", calendar: "calendar-2" });
+		expect(h.store.instances.get(successorId)?.pushFor).toBe("2026-09-11T09:50");
+	});
+
+	it("hands a successor to the note once the note carries its time, so completing that line withdraws", async () => {
+		const h = harness();
+		const reminder = parsedReminder({ dueLocal: "2026-09-11T09:00" });
+		await h.engine.sync([reminder]);
+		const predecessorId = h.engine.instanceIdOf(reminder);
+		await h.engine.syncServerScheduled(NOW);
+		const snoozed = await h.engine.snooze(predecessorId, 50);
+		const successorId = snoozed?.newInstanceId ?? "";
+		await h.engine.syncServerScheduled(NOW);
+		// The snooze withdrew the predecessor's entry; the successor now holds its own.
+		expect(h.calendar.clearedPushIds).toEqual(["calendar-1"]);
+		expect(h.store.instances.get(successorId)?.pushIds).toEqual({ ntfy: "ntfy-2", calendar: "calendar-2" });
+
+		// The note is rewritten with the new time: it owns the successor now.
+		await h.engine.sync([parsedReminder({ dueLocal: "2026-09-11T09:50" })]);
+		expect(h.store.instances.get(successorId)?.supersedes).toBeUndefined();
+
+		// So completing that line is an ordinary departure, and the entry goes with
+		// it — the state-owned branch would have spared it forever.
+		await h.engine.sync([]);
+		expect(h.calendar.clearedPushIds).toEqual(["calendar-1", "calendar-2"]);
+		expect(h.store.instances.get(successorId)?.pushIds).toBeUndefined();
 	});
 
 	it("migrates the pre-channel push id of an existing record", async () => {

@@ -338,6 +338,55 @@ async function main() {
 		report.notices = allNotices;
 		report.steps.push({ step: "the test-notification command renders a notice", ok: typeof allNotices === "number" && allNotices > deliveryNotices });
 
+		// A line written while the app is running has to become a reminder without a
+		// rescan. This is the flow the plugin exists for — write it, close it, it is
+		// set up — and it is the one a rescan-based harness cannot see: the note is
+		// parsed on `metadataCache` change, and if the engine is never told, the line
+		// is ignored until the next launch.
+		const live = await cdp.evaluate(`(async () => {
+			const path = ${JSON.stringify(notePath)};
+			const file = app.vault.getAbstractFileByPath(path);
+			if (!file) { return { indexed: false, instances: [], reason: "note missing" }; }
+			const soon = new Date(Date.now() + 10 * 60 * 1000);
+			const pad = (value) => String(value).padStart(2, "0");
+			const wall = pad(soon.getHours()) + ":" + pad(soon.getMinutes());
+			await app.vault.modify(file, "- [ ] smoke live " + wall + "\\n");
+			// The indexer debounces by 300ms; poll the engine rather than sleeping,
+			// and never call rescan — that is the point of the step.
+			const deadline = Date.now() + 8000;
+			for (;;) {
+				const records = app.plugins.plugins.kairos.engine.snapshot();
+				const found = records.filter((record) => String(record.title ?? "").startsWith("smoke live"));
+				if (found.length > 0) {
+					return { indexed: true, instances: found.map((record) => ({ title: record.title, dueLocal: record.dueLocal, state: record.state })) };
+				}
+				if (Date.now() > deadline) {
+					return { indexed: false, instances: [], reason: "no record after the debounce" };
+				}
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+		})()`);
+		report.live = live;
+		report.steps.push({
+			step: "a line written while the app runs becomes a reminder without a rescan",
+			ok: live.indexed === true && live.instances.length === 1 && live.instances[0].state === "scheduled",
+		});
+
+		// The mirror the same pass wrote is the other half of "it is set up": the
+		// reminder has to be registered with whatever channel the user configured, and
+		// this vault deliberately has none, so the pass reports nothing registered
+		// rather than failing.
+		const pass = await cdp.evaluate(`(async () => {
+			const plugin = app.plugins.plugins.kairos;
+			await plugin.syncServerSchedule();
+			return plugin.lastPushPass;
+		})()`);
+		report.livePass = pass;
+		report.steps.push({
+			step: "the push pass ran over the new reminder and reported no refusals",
+			ok: typeof pass === "object" && pass !== null && Array.isArray(pass.failed) && pass.failed.length === 0,
+		});
+
 		report.ok = report.steps.every((entry) => entry.ok === true);
 	} finally {
 		child.kill("SIGTERM");

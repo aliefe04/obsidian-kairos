@@ -10,10 +10,16 @@
  * a list, and a task with an alarm fires the phone's own alert with Kairos closed.
  *
  * Each reminder is one `VTODO`, and its identity is *derived*, not minted:
- * `kairos-<instanceId>` names the resource. A due time that is edited therefore
- * rewrites the same resource instead of leaving the old one to fire beside the
- * new one, and a registration can be withdrawn from the instance id alone — which
- * is what makes an untracked registration still removable.
+ * `kairos-<instanceId>` names the resource. Two things follow. Re-registering the
+ * same instance rewrites the same resource, so a pass that could not tell whether
+ * its predecessor landed cannot leave two tasks behind. And a registration can be
+ * withdrawn from the instance id alone, which is what makes an untracked one still
+ * removable.
+ *
+ * An *edited* due time is not this case: the instance id is derived from the due
+ * time as well as the line, so a new time is a new instance. The engine withdraws
+ * the old entry by its stored id and registers the new one, which is why the
+ * derived name has to make both operations exact rather than approximate.
  *
  * The alarm is an absolute `VALARM` trigger at the due instant. Whether iOS
  * honours a `VALARM` inside a `VTODO` is *not* verified here — no one involved can
@@ -186,9 +192,10 @@ export function createCalDavChannel(dependencies: { request?: HttpRequest } = {}
 				return { ok: false, detail: "caldav: no collection URL configured" };
 			}
 			try {
-				// PUT replaces the resource at this URL, so an edited due time updates
-				// this task in place rather than creating a second one. A collection
-				// that does not exist yet is created on the way (Radicale answers 409).
+				// PUT replaces the resource at this URL, so writing the same instance
+				// twice leaves one task rather than two — the property that makes a
+				// retried registration harmless. A collection that does not exist yet is
+				// created on the way (Radicale answers 409).
 				const response = await putTask(
 					request,
 					ctx.settings,
