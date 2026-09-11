@@ -17,15 +17,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Documentation
 
-- **An iOS account cannot authenticate over plain HTTP — measured, and previously described as
-  workable.** With the account pointed at `http://…:5232/` and *Use SSL* off, the phone's DAV clients
-  reached the server and were refused without ever presenting the password: requests from `accountsd`,
-  `remindd` and `dataaccessd` were each logged `denied for anonymous user`, answered `401`, and not
-  one produced a `207` — while the same requests carrying credentials answer `207` at every step. The
-  recipe now states TLS as a requirement and documents the smallest way to provide it on a LAN: a
-  Caddy front with a local CA on a second port, its root certificate served for installation, and the
-  two-step trust (install the profile, then enable it under *Certificate Trust Settings*) that
-  skipping leaves a certificate the phone still refuses.
+- **An iOS account that never authenticated over plain HTTP, and a TLS front that makes the next
+  attempt observable.** With the account pointed at `http://…:5232/` and *Use SSL* off, the phone's
+  DAV clients reached the server and were refused without ever presenting the password: requests from
+  `accountsd`, `remindd` and `dataaccessd` were each logged `denied for anonymous user`, answered
+  `401`, and not one produced a `207` — while the same requests carrying credentials answer `207` at
+  every step. *Why* no credential was presented is `[INFERENCE]`: an account left unverified sends
+  nothing on any transport, and these logs cannot separate that from a client that will not send a
+  password in the clear. The recipe now documents a Caddy front with a local CA on a second port —
+  its root certificate served for installation, and the two-step trust (install the profile, then
+  enable it under *Certificate Trust Settings*) that skipping leaves a certificate the phone still
+  refuses — because the front settles the question either way: its access log records the `Host` and
+  whether an `Authorization` header arrived, so the next attempt over HTTPS says which it was.
 
 ## [0.1.4] — 2026-09-11
 
