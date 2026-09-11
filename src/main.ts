@@ -564,7 +564,7 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 		].join("\n");
 	}
 
-	private async testNotification(): Promise<void> {
+	async testNotification(): Promise<void> {
 		const message: OutboundMessage = {
 			instanceId: `test-${Date.now()}`,
 			title: "Kairos test notification",

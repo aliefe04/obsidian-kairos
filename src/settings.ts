@@ -170,6 +170,8 @@ export interface SettingsHost {
 	channelNames(): string[];
 	/** One line about the last push pass, shown with the channel list. */
 	pushSummary(): string;
+	/** Sends through every configured channel, for the button beside the channel list. */
+	testNotification(): Promise<void>;
 }
 
 /** Keys whose value has type `T`, so a control can only bind a setting of the matching type. */
@@ -452,6 +454,19 @@ export class KairosSettingTab extends PluginSettingTab {
 						name: "Registered channels",
 						render: (setting) => {
 							setting.setDesc(`Registered channels: ${this.host.channelNames().join(", ")}. ${this.host.pushSummary()}.`);
+						},
+					},
+					{
+						name: "Send a test",
+						render: (setting) => {
+							setting.setDesc(
+								"Sends through every configured channel now, ignoring quiet hours and the schedule, so you can check a phone without waiting for a reminder.",
+							);
+							setting.addButton((button) =>
+								button.setButtonText("Test notification").onClick(() => {
+									void this.host.testNotification();
+								}),
+							);
 						},
 					},
 					toggleDef("desktopEnabled", "Desktop notifications", "Show an operating system notification when an alarm is due.", [

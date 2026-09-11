@@ -56,7 +56,7 @@ function renderToken(token: string, date: Ymd, pack: LocalePack): string {
 		case "D":
 			return String(date.d);
 		case "dddd":
-			return nameFor(pack.weekdays, weekdayOf(date), "long") ?? "";
+			return pack.weekdayDisplay?.[weekdayOf(date)] ?? nameFor(pack.weekdays, weekdayOf(date), "long") ?? "";
 		// The packs carry no two-letter weekday names, so `ddd` and `dd` render the
 		// same three-letter form rather than dropping the day from the path.
 		case "ddd":

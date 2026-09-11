@@ -2,6 +2,10 @@ import type { LocalePack } from "./index";
 
 export const en: LocalePack = {
 	tag: "en",
+	// `dddd` in a daily-note format has to render the way Obsidian renders it, or
+	// the plugin's own Add reminder command names a note differently from the one
+	// Obsidian's daily-note command already made.
+	weekdayDisplay: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
 	relative: {
 		today: "today",
 		tomorrow: "tomorrow",

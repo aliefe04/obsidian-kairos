@@ -16,6 +16,14 @@ export interface LocalePack {
 	relative: Record<string, RelativeDay>;
 	/** Lower-cased weekday names and abbreviations, 0 = Sunday. */
 	weekdays: Record<string, number>;
+	/**
+	 * Display forms for `dddd`, index 0 = Sunday, spelled and cased the way this
+	 * locale's daily notes are named. The parse table above is lower-cased for
+	 * lookup, so it cannot supply this: rendering from it produced `friday` where
+	 * Obsidian's own daily-note command produces `Friday`, and the two names then
+	 * refer to different files.
+	 */
+	weekdayDisplay?: string[];
 	/** Lower-cased month names and abbreviations, 1 = January. */
 	months: Record<string, number>;
 	meridiem: { am: string[]; pm: string[] };
