@@ -3,8 +3,8 @@
  *
  * If it differs per device, so does every instance id derived from it, and a
  * reminder written on both sides becomes two entries in every channel that names
- * its registration after the instance — two tasks in Reminders for one line, each
- * device able to withdraw only its own. The value therefore lives in the vault,
+ * its registration after the instance — two pushes for one line, each device able
+ * to withdraw only its own. The value therefore lives in the vault,
  * which a vault sync carries to the other device, and not in `data.json`, which a
  * vault sync usually leaves behind inside `.obsidian`.
  */

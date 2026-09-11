@@ -12,7 +12,7 @@ manifest.json  versions.json  package.json  tsconfig.json  esbuild.config.mjs  v
 eslint.config.mjs  version-bump.mjs  LICENSE (MIT)  README.md
 .github/workflows/{release,verify}.yml   .github/ISSUE_TEMPLATE/bug_report.yml   .github/FUNDING.yml
 src/{main.ts,settings.ts,index,parse,schedule,channels,ui}
-tests/{stubs,support.ts,8 suites}   scripts/smoke.mjs
+tests/{stubs,support.ts,17 suites}   scripts/smoke.mjs
 docs/{PLAN,market,delivery,architecture,community,roadmap,risks,decisions}.md   docs/spec/*.md
 ```
 

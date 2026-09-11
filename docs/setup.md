@@ -1,11 +1,11 @@
 # Setting up delivery
 
-Kairos has four delivery channels. Each one is independent. The desktop channel is on by default;
+Kairos has three delivery channels. Each one is independent. The desktop channel is on by default;
 the rest stay off until you configure them.
 
 Which one you want depends on where the alert has to land. `ntfy` pushes to a phone in seconds, with
-Obsidian closed. The CalDAV channel writes a task into a calendar account iOS shows in its **Reminders**
-app, so the phone's own alarm fires — see [`recipes/caldav-reminders.md`](recipes/caldav-reminders.md).
+Obsidian closed. The calendar file writes an `.ics` into the vault for an application you already
+have on the device to alarm on.
 
 The first question is usually "will it alert me when Obsidian is closed?". The answer depends on the
 channel, so read the table in `docs/delivery.md` if you want the engineering version. The short

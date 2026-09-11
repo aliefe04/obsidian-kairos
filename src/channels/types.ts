@@ -67,22 +67,6 @@ export interface DeliveryChannel {
 	name: string;
 	mode: ChannelMode;
 	isConfigured(settings: KairosSettings): boolean;
-	/**
-	 * How far ahead this channel may be registered, in days. Defaults to
-	 * `settings.serverScheduleHorizonDays`, which exists because `ntfy.sh` refuses
-	 * a longer delay than three days. A channel that owns entries on a server of
-	 * its own — a calendar, a Reminders list — has no such ceiling and should say so,
-	 * or a reminder two months out would never be registered anywhere.
-	 */
-	scheduleHorizonDays?: number;
-	/**
-	 * Whether a registration whose due time has already passed should be deleted
-	 * when the record stops wanting it. Off for channels whose provider treats a
-	 * delete of a delivered notification as the user dismissing it (`ntfy`); on for
-	 * one that owns a real entry, which would otherwise linger in a list forever
-	 * after the task was completed.
-	 */
-	deleteAfterDue?: boolean;
 	send(msg: OutboundMessage, ctx: ChannelContext): Promise<DeliveryResult>;
 	/**
 	 * Cancel a push that was scheduled on a server; `pushId` is the id the

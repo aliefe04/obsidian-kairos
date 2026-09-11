@@ -1,5 +1,5 @@
 /**
- * The HTTP seam the network channels share.
+ * The HTTP seam the network channels use.
  *
  * Inside the plugin the only transport is Obsidian's `requestUrl`, and it is not
  * interchangeable with node's `fetch`: it is Electron/Chromium's stack, and the

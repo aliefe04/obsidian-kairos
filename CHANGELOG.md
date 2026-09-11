@@ -3,6 +3,19 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- **The CalDAV channel, and the two channel-SDK knobs only it used.** It existed to put one `VTODO`
+  per reminder into a calendar account iOS shows in its Reminders app, so a reminder would alarm the
+  phone with Obsidian closed — a path that never carried an alarm through to a device, only a task
+  into a list whose alarming behavior could not be observed from outside an iPhone. Rather than ship
+  a channel that stays switched off, the channel, its four settings, its `deleteAfterDue` and
+  `scheduleHorizonDays` capabilities and its recipe are deleted outright; `ntfy`, the desktop
+  notification and the `.ics` file are untouched. A registration whose due time has passed is now
+  retired from the record without a delete on every channel, which is what `ntfy` already required.
+
 ## [0.1.5] — 2026-09-11
 
 ### Fixed
@@ -280,6 +293,7 @@ plugin directory yet: install it from this release, or with BRAT (`aliefe04/obsi
 - The performance target for large vaults (10,000 notes under 1.5 seconds) is a target, not yet a
   measurement. The benchmark is a Phase 1 item.
 
+[Unreleased]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.5...HEAD
 [0.1.5]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.4...0.1.5
 [0.1.4]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.3...0.1.4
 [0.1.3]: https://github.com/aliefe04/obsidian-kairos/compare/0.1.2...0.1.3

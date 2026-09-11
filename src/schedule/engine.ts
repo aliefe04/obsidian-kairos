@@ -246,11 +246,6 @@ export function computeDuePlan(input: DuePlanInput): DuePlan {
 
 /**
  * A channel the engine mirrors into ahead of the due time, as the engine sees it.
- *
- * `ntfy.sh` refuses a delay longer than three days, which is why
- * `serverScheduleHorizonDays` exists and defaults to three; a channel that owns
- * entries on a server of its own has no such ceiling, so it states its own horizon
- * here rather than being held to the strictest provider's limit.
  */
 export interface ScheduledChannel {
 	id: string;
@@ -260,10 +255,6 @@ export interface ScheduledChannel {
 	 * registration must still be able to take it back.
 	 */
 	configured: boolean;
-	/** Days ahead it may be registered; undefined means the settings horizon. */
-	horizonDays?: number;
-	/** Delete a registration whose due time has already passed. */
-	deleteAfterDue?: boolean;
 }
 
 export interface EngineOptions {
@@ -625,22 +616,11 @@ export class ScheduleEngine {
 					await this.options.store.writeInstance(record);
 					// A reminder that came due while the app was closed is published by
 					// its *catch-up fire*, not by the registration pass, so its entry may
-					// have no handle stored at all. When that is the case the channels
-					// that own a real entry are asked to drop whatever they hold for the
-					// instance — which is why an entry is named after the instance and
-					// not after a due time. Channels that want such entries kept are not
-					// asked: `deleteAfterDue` unset means a delivered notification,
-					// whose deletion reads as the user dismissing it. With a handle in
-					// hand the retirement pass does the withdrawal instead, applying the
-					// same per-channel rule.
-					if (this.pushesFor(record) === undefined) {
-						await this.clearPush(
-							record.instanceId,
-							(this.options.scheduledChannels?.() ?? [])
-								.filter((channel) => channel.deleteAfterDue === true)
-								.map((channel) => ({ channelId: channel.id })),
-						);
-					}
+					// have no handle stored at all. The registration is retired through
+					// the retirement pass, which holds that policy: a due time that has
+					// passed is dropped from the record without a delete, because
+					// deleting a delivered notification reads to `ntfy`'s clients as the
+					// user dismissing it.
 					result.cancelled += 1;
 					continue;
 				}
@@ -1009,18 +989,15 @@ export class ScheduleEngine {
 		if (!send) {
 			return result;
 		}
-		// Bounded by each channel's own limit: ntfy.sh refuses a delay longer than
-		// three days (`message-delay-limit`), so its default is the settings horizon,
-		// while a channel that owns entries on a server of its own registers months
-		// ahead. A record is therefore live if *any* channel would still take it.
-		// The settings object is mutated in place, so a change takes effect on the
-		// next pass.
+		// ntfy.sh refuses a delay longer than three days (`message-delay-limit`), so
+		// that is what `serverScheduleHorizonDays` defaults to and the only horizon a
+		// registration has to clear. The settings object is mutated in place, so a
+		// change takes effect on the next pass.
 		const channels = this.options.scheduledChannels?.() ?? [];
 		if (channels.length === 0) {
 			return result;
 		}
-		const horizonMs = (channel: ScheduledChannel): number =>
-			(channel.horizonDays ?? this.options.settings.serverScheduleHorizonDays) * 24 * 60 * 60 * 1000;
+		const horizonMs = this.options.settings.serverScheduleHorizonDays * 24 * 60 * 60 * 1000;
 		const live = new Set<string>();
 		for (const record of this.snapshot()) {
 			if (record.state !== "scheduled" && record.state !== "armed") {
@@ -1038,7 +1015,7 @@ export class ScheduleEngine {
 			if (!Number.isFinite(due) || due <= now) {
 				continue;
 			}
-			const within = channels.filter((channel) => channel.configured && due <= now + horizonMs(channel));
+			const within = channels.filter((channel) => channel.configured && due <= now + horizonMs);
 			if (within.length === 0) {
 				continue;
 			}
@@ -1064,11 +1041,9 @@ export class ScheduleEngine {
 			try {
 				// A due time the record no longer carries makes every id it holds stale.
 				// They go *before* the new registration, not after: a channel may name a
-				// registration after the instance rather than after the due time — a
-				// calendar entry keyed by `instanceId` must, since it has to be
-				// removable from the instance alone — and withdrawing afterwards would
-				// delete the entry that was just written. Guarded on there being
-				// something to withdraw: `pushesFor` answers `undefined` for an empty
+				// registration after the instance rather than after the due time, and
+				// withdrawing afterwards would delete the entry that was just written.
+				// Guarded on there being something to withdraw: `pushesFor` answers `undefined` for an empty
 				// record, which the channels read as "sweep", and a first registration
 				// is not a departure.
 				if (!current && record.pushIds !== undefined) {
@@ -1104,10 +1079,8 @@ export class ScheduleEngine {
 			}
 		}
 		// Every registration the index no longer wants — completed, re-keyed, past
-		// due or outside every horizon — is retired from the record, channel by
-		// channel: one channel's due time can still be worth keeping while another's
-		// has gone by (a three-day ntfy push beside a year-long calendar entry).
-		const deletesAfterDue = new Set(channels.filter((channel) => channel.deleteAfterDue === true).map((channel) => channel.id));
+		// due or outside the horizon — is retired from the record, channel by
+		// channel.
 		for (const record of this.snapshot()) {
 			if (record.pushFor === undefined || live.has(record.instanceId)) {
 				continue;
@@ -1125,11 +1098,12 @@ export class ScheduleEngine {
 				continue;
 			}
 			// A reminder that has fired is still written in the note, unchecked, so its
-			// entry stays: Reminders is where the user ticks it off, and deleting the
-			// entry the moment it rings would take the task away and leave the list out
-			// of step with the note that still asks for it. What the note stops asking
-			// for is withdrawn by `sync` when the line goes, and what the user has
-			// finished with (`acked`, `muted`, `snoozed`) is retired below.
+			// registration stays: the provider has delivered the push or is about to, and
+			// its clients read a delete of a delivered notification as the user dismissing
+			// it — a delete the moment it rings would suppress the very alert the note
+			// still asks for. What the note stops asking for is withdrawn by `sync` when
+			// the line goes, and what the user has finished with (`acked`, `muted`,
+			// `snoozed`) is retired below.
 			if (record.state === "notified" || record.state === "missed") {
 				continue;
 			}
@@ -1138,12 +1112,11 @@ export class ScheduleEngine {
 			this.forgetPushes(record);
 			record.updatedAt = now;
 			await this.options.store.writeInstance(record);
-			// A due time that has passed is not cancelled for a channel that treats a
-			// delete of a delivered notification as the user dismissing it; the
-			// registration is retired from the record instead, so no later pass
-			// repeats it. A channel that owns a real entry asks for it back
-			// (`deleteAfterDue`), or a task completed months ago would still sit in a
-			// Reminders list with nothing left to remove it.
+			// A due time that has passed is not cancelled: the provider has delivered
+			// the push or is about to, and its clients read a delete of a delivered
+			// notification as the user dismissing it. The registration is retired from
+			// the record instead, so no later pass repeats it. Only a registration
+			// still ahead of its time is withdrawn.
 			//
 			// `dueLocal` is the `YYYY-MM-DDTHH:mm` the parser produced, so the
 			// unresolvable branch only guards a corrupted state file: it claims
@@ -1151,12 +1124,7 @@ export class ScheduleEngine {
 			// the record now carries, never for the due time the record itself covers.
 			const due = recordEpochMs(record, this.options.tzId);
 			const passed = Number.isFinite(due) ? due <= now : pushFor !== record.dueLocal;
-			// A passed due time deletes only where the channel asks for it; the
-			// withdrawal of a registration still ahead of its time is unconditional.
-			await this.clearPush(
-				record.instanceId,
-				passed ? (pushes ?? []).filter((entry) => deletesAfterDue.has(entry.channelId)) : pushes,
-			);
+			await this.clearPush(record.instanceId, passed ? [] : pushes);
 			result.cleared.push(record.instanceId);
 		}
 		for (const instanceId of [...this.scheduleBackoff.keys()]) {
@@ -1195,10 +1163,10 @@ export class ScheduleEngine {
 	 * `undefined` when it holds none at all.
 	 *
 	 * The empty case is the departing-record one, and it is not the same as "nothing
-	 * to cancel": a channel whose identity is derived rather than minted — a calendar
-	 * entry keyed by `instanceId`, say — can drop what it holds from the instance id
-	 * alone, so the channels are asked to sweep instead of being left believing a
-	 * cancelled reminder is still coming.
+	 * to cancel": a channel whose identity is derived rather than minted — a
+	 * registration named after the instance, say — can drop what it holds from the
+	 * instance id alone, so the channels are asked to sweep instead of being left
+	 * believing a cancelled reminder is still coming.
 	 *
 	 * Read from the record itself, never from the configured channel list: unticking
 	 * a channel's enable box must not strand the registration it already made, or a

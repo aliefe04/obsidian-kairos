@@ -48,4 +48,3 @@ each item names the experiment that would settle it.
   benchmark is a Phase 1 deliverable.
 - **[INFERENCE]** Locale packs make non-English use viable. Turkish is shipped as the proof that this
   works without `chrono-node`; no user testing has happened yet.
-| R15 | **A `VTODO` with a `VALARM` may not alarm in iOS Reminders** — the CalDAV path is the only Mac-free route into Reminders (iCloud's own CalDAV does not carry them), but whether iOS fires an alarm from a task, rather than only from an event, is not observable from outside an iPhone | Unverified | Medium | The task carries an absolute `VALARM` trigger at the due instant rather than relying on the list's own alert setting, and the recipe states the alarm as unconfirmed instead of promising a ringing phone. Verified so far: the write, the in-place update and the delete against a real Radicale | A reminder that appears in the list but never alarms, or one that alarms at the wrong minute |

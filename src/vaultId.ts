@@ -10,10 +10,10 @@ import { DEFAULT_VAULT_STATE_FOLDER, vaultStateFolderName } from "./schedule/sta
  * `.obsidian` — and a vault sync usually leaves that out — so a phone and a Mac
  * sharing one vault quietly derived different names for the same line. Every
  * channel that names a registration after the instance then held two of it: two
- * tasks in Reminders for one reminder, each device able to withdraw only its own.
+ * pushes for one reminder, each device able to withdraw only its own.
  *
  * Kept in the vault, the file rides along with the notes, so both devices read the
- * same id and a PUT lands on the same resource.
+ * same id and the second write replaces the first rather than adding to it.
  *
  * The value already in `data.json` wins the first time: a vault that has been
  * running has state files and server registrations named after it, and replacing

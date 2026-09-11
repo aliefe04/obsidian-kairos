@@ -72,7 +72,6 @@ notification API available to plugins, so the desktop channel degrades to an in-
 |---|---|---|
 | Desktop OS notification | `local` | Electron notification plus the alert window with Done, Snooze and Open note. Without Electron (mobile, or a failed notification) it raises an in-app notice. |
 | ntfy push | `server-scheduled` | `POST` to `<server>/<topic>` with `X-At` so the server holds the push until the due time and delivers it with Obsidian closed. The publish response's message id is remembered; cancel deletes it (`DELETE /<topic>/<id>`), and an unchanged reminder is not published twice. The payload is the task title alone unless "include note name" is enabled. |
-| CalDAV tasks | `server-scheduled` | One `VTODO` per reminder in a collection you name, with an absolute `VALARM` at the due time. A CalDAV account added in iOS **Settings → Reminders → Reminders Accounts** surfaces that collection as a list, so the phone's own alarm fires with Obsidian closed. The resource name is derived from the instance id, so a repeated write rewrites the same task and a cancelled reminder is deleted from the instance id alone; a collection that does not exist is created on the first write. Setup and the one link to confirm on the phone: [`docs/recipes/caldav-reminders.md`](docs/recipes/caldav-reminders.md). |
 | `.ics` export | `local` | Writes an RFC 5545 file (default `kairos.ics`) with `DTSTART;TZID=…` and a display `VALARM`. |
 
 Channel tokens live in `data.json` as plaintext, because Obsidian exposes no secret API and

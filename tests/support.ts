@@ -199,8 +199,6 @@ export function scheduledChannelsOf(
 			.map((channel) => ({
 				id: channel.id,
 				configured: channel.isConfigured(settings),
-				horizonDays: channel.scheduleHorizonDays,
-				deleteAfterDue: channel.deleteAfterDue,
 			}));
 }
 

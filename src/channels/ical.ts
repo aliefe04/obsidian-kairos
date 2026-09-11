@@ -1,10 +1,10 @@
 /**
- * The iCalendar primitives both calendar channels write with (RFC 5545).
+ * The iCalendar primitives the calendar file is written with (RFC 5545).
  *
- * A calendar file in the vault and a `VTODO` on a server are the same format, and
- * two folders would eventually disagree about where a line breaks — the exact
- * drift this module exists to prevent. Named `ical` rather than `ics` because the
- * channel that owns the file is one of the callers, not the format.
+ * One implementation of the format, so the escaping and folding rules cannot drift
+ * apart from themselves — the exact drift this module exists to prevent. Named
+ * `ical` rather than `ics` because the channel that owns the file is a caller of
+ * this module, not the format.
  */
 
 /** Escapes a text value: backslash, semicolon, comma, newline (§3.3.11). */

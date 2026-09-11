@@ -10,7 +10,6 @@ import { Notice, Platform, Plugin, TFile, type WorkspaceLeaf } from "obsidian";
 import { createDesktopChannel } from "./channels/desktop";
 import { createIcsChannel, type IcsEvent } from "./channels/ics";
 import { loadVaultId } from "./vaultId";
-import { createCalDavChannel } from "./channels/caldav";
 import { createNtfyChannel } from "./channels/ntfy";
 import { ChannelRegistry, combinedResult, describeError, type ChannelContext, type DeliveryResult, type OutboundMessage } from "./channels/types";
 import { VaultIndexer, type ScanSummary } from "./index/indexer";
@@ -93,7 +92,7 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 			// Every registered server-scheduled channel, switched on or not: the engine
 			// registers only with the configured ones, but must still be able to
 			// withdraw and clean up what a channel registered before it was switched
-			// off — including deleting a real entry whose due time has gone by.
+			// off.
 			scheduledChannels: () =>
 				this.registry
 					.all()
@@ -101,8 +100,6 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 					.map((channel) => ({
 						id: channel.id,
 						configured: channel.isConfigured(this.settings),
-						horizonDays: channel.scheduleHorizonDays,
-						deleteAfterDue: channel.deleteAfterDue,
 					})),
 			onDeliver: (record, message) => {
 				if (record.severity === "alarm" && message.actions) {
@@ -241,7 +238,6 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 	private registerChannels(): void {
 		this.registry.register(createDesktopChannel({ app: this.app }));
 		this.registry.register(createNtfyChannel());
-		this.registry.register(createCalDavChannel());
 		this.registry.register(
 			createIcsChannel({
 				plugin: this,
