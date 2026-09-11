@@ -21,6 +21,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   user dismissing it. A passed registration is now dropped from the record (`pushId`/`pushFor`) without
   issuing a delete, so no later pass repeats it and the message is left to the provider. A due time
   still ahead keeps the existing delete-by-id, which is a genuine cancellation.
+- **Relaunching after a reminder was missed while Obsidian was closed published a second push for
+  it.** That retirement ran on the launch pass, which `main.start()` reaches before the tick that
+  catches the reminder up: the record's `pushId`/`pushFor` were dropped, the catch-up then read no
+  registration covering its due time, and it published again — a push for a due time the phone had
+  already been sent. A record that is still `scheduled` or `armed` is about to fire, so it now keeps
+  its marker whatever its due time reads; the catch-up that reads it stays local-only, and the pass
+  after that fire drops the marker without a delete.
 - **A live reminder was registered again on every pass, duplicating the push.** `ntfy.sh` does not
   replace a pending scheduled message when the same `X-Sequence-ID` is published again — both copies
   are delivered — so the engine now remembers the registration: the instance record stores the
@@ -55,9 +62,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 
 - The push summary line reports what it counts: `push scheduling: 2 registered, 3 pending, 0 failed,
-  0 deferred, 1 cancelled`. `registered` is the registrations the last pass made and `pending` is the
-  pushes the server is holding, read back from state; both replace the old `sent` wording, which
-  implied the every-pass re-send that no longer happens.
+  0 deferred, 1 cleared`. `registered` is the registrations the last pass made, `pending` is the
+  pushes the server is holding, read back from state, and `cleared` counts registrations the pass
+  dropped from the record — withdrawn by message id when their due time is still ahead, retired
+  without a delete once it has passed. All three replace the old `sent` wording, which implied the
+  every-pass re-send that no longer happens.
 
 ## [0.1.1] — 2026-09-11
 

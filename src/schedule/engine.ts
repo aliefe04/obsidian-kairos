@@ -916,6 +916,18 @@ export class ScheduleEngine {
 			if (record.pushFor === undefined || live.has(record.instanceId)) {
 				continue;
 			}
+			// A record still waiting to fire owns its registration, whether or not
+			// its due time has passed. The catch-up tick that is about to deliver it
+			// reads `pushFor` to learn the provider already holds a push for this
+			// due time; retiring the fields here — which is what a due time that has
+			// passed does — would make that fire read no cover and publish a second
+			// copy of a push the phone has already been sent. A record that has left
+			// this set (`notified`, `acked`, `cancelled`, `missed`, `snoozed`) is
+			// retired below as before, so the pass after that fire is the one that
+			// drops the marker.
+			if (record.state === "scheduled" || record.state === "armed") {
+				continue;
+			}
 			const pushId = record.pushId;
 			const pushFor = record.pushFor;
 			delete record.pushId;

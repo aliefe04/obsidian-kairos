@@ -118,9 +118,11 @@ Rules that are easy to get wrong, so they are stated here then tested:
   its minimum delay, and that late push is the only delivery that due time will ever have. A pending
   registration whose due time is still ahead is withdrawn by message id when it is no longer wanted;
   one whose due time has passed is dropped from the record without a delete, because a delivered
-  notification that is deleted is read by ntfy's clients as the user dismissing it. Traced in the real
-  app on 2026-09-11: one reminder, three deliveries (two at the due second, one at due+10 s) before
-  this rule held.
+  notification that is deleted is read by ntfy's clients as the user dismissing it. A record still
+  `scheduled` or `armed` keeps its marker until it has fired, whatever its due time reads: the
+  catch-up that is about to fire it reads `pushFor` and stays local, and the pass after that fire is
+  the one that drops the marker. Traced in the real app on 2026-09-11: one reminder, three deliveries
+  (two at the due second, one at due+10 s) before this rule held.
 - **Record-set operations are serialized.** `load`, `sync`, `syncServerScheduled`, `ack`, `setMuted`
   and the snooze writes run one at a time in a FIFO queue; a pass queued behind another runs after it
   and reads its clock once it owns the queue, so a pass that waited cannot mistake an already-started

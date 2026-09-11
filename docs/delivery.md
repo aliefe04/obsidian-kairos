@@ -96,7 +96,12 @@ Design rules for every push channel:
      delete is not sent: the provider has delivered the push or is about to, and `ntfy`'s clients read
      a delete of a delivered notification as the user dismissing it on the phone. The registration is
      dropped from the record (`pushId`/`pushFor`) so no later pass repeats it, and the message is left
-     to the provider. Only a due time still ahead is a cancellation worth sending.
+     to the provider. Only a due time still ahead is a cancellation worth sending. A record still
+     `scheduled` or `armed` is not retired at all, however its due time now reads: it is about to
+     fire, and that catch-up fire reads `pushFor` to learn the provider already holds a push for its
+     due time, so retiring the marker first would turn the fire into a second push. The pass that runs
+     after the fire — the record has left that set by then — is the one that drops the marker, still
+     without a delete.
 3. **Two-way cancel, best-effort.** Completing or rescheduling a task deletes the scheduled push by the
    message id the publish returned (`DELETE /<topic>/<id>`) — unless that due time has already passed,
    in which case the registration is retired from the record without a delete, per rule 2 — and that id

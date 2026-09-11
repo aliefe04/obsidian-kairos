@@ -175,6 +175,58 @@ describe("the fire path and the registration that covers it", () => {
 		expect(h.store.instances.get(id)?.pushFor).toBeUndefined();
 	});
 
+	it("keeps the registration of a record that is about to fire, and retires it after the fire", async () => {
+		// A reminder registered before the app closed and due while it was shut.
+		// `main.start()` reaches the pass from `applyIndex` and the catch-up tick
+		// only after it, so the pass runs over a record whose due time has passed.
+		// `armed` is the record inside the arming window and `scheduled` the one
+		// before it; both are still waiting to fire, and both own their marker.
+		for (const state of ["armed", "scheduled"] as const) {
+			const h = harness();
+			const reminder = parsedReminder({ dueLocal: DUE_LOCAL });
+			await h.engine.sync([reminder]);
+			const id = h.engine.instanceIdOf(reminder);
+			expect((await h.engine.syncServerScheduled(NOW)).sent).toEqual([id]);
+
+			const record = h.engine.snapshot().find((entry) => entry.instanceId === id);
+			expect(record).toBeDefined();
+			if (record === undefined) {
+				throw new Error("the reminder is missing from the engine");
+			}
+			record.state = state;
+
+			// The relaunch pass, past the due time. It leaves the marker alone: the
+			// catch-up that follows is the fire that reads it to learn the provider
+			// already holds a push for this due time.
+			h.setNow(DUE + 2 * 60 * 1000);
+			const pass = await h.engine.syncServerScheduled();
+			expect(pass.sent).toEqual([]);
+			expect(pass.cleared).toEqual([]);
+			expect(h.server.sent).toHaveLength(1);
+			expect(h.store.instances.get(id)?.pushId).toBe("push-1");
+			expect(h.store.instances.get(id)?.pushFor).toBe(DUE_LOCAL);
+
+			const tick = await h.engine.tick();
+			expect(tick.fired).toEqual([id]);
+			// Told a registration covers this due time, so the catch-up goes to the
+			// local channels only: publishing here would deliver a second copy of a
+			// push the phone has already been sent.
+			expect(h.fires).toEqual([{ instanceId: id, serverScheduled: true }]);
+			expect(h.server.sent.map((message) => message.instanceId)).toEqual([id]);
+			expect(h.local.sent.map((message) => message.instanceId)).toEqual([id]);
+
+			// The fire wrote `notified`, so the record has left the waiting set: the
+			// pass after it drops the marker, and still sends no delete — the
+			// provider has delivered that push or is about to.
+			const after = await h.engine.syncServerScheduled();
+			expect(after.cleared).toEqual([id]);
+			expect(h.server.cleared).toEqual([]);
+			expect(h.server.clearedPushIds).toEqual([]);
+			expect(h.store.instances.get(id)?.pushId).toBeUndefined();
+			expect(h.store.instances.get(id)?.pushFor).toBeUndefined();
+		}
+	});
+
 	it("keeps a server-scheduled channel out of the local fan-out but not out of the test fan-out", async () => {
 		const registry = new ChannelRegistry();
 		const local = fakeChannel("fake-local", "local");

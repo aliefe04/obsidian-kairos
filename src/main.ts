@@ -557,7 +557,7 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 		// A registered push is one the server is holding for this device; the count
 		// is the same store the engine reads, so it survives a restart.
 		const pending = this.engine?.snapshot().filter((record) => record.pushId !== undefined).length ?? 0;
-		return `push scheduling: ${pass.sent.length} registered, ${pending} pending, ${pass.failed.length} failed, ${pass.deferred.length} deferred, ${pass.cleared.length} cancelled`;
+		return `push scheduling: ${pass.sent.length} registered, ${pending} pending, ${pass.failed.length} failed, ${pass.deferred.length} deferred, ${pass.cleared.length} cleared`;
 	}
 
 	private async copyDiagnostics(): Promise<void> {
