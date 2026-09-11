@@ -19,11 +19,28 @@ export interface StateRootOptions {
 	vaultStateFolder: string;
 }
 
+/**
+ * The folder state and the vault id live in, when they live in the vault.
+ *
+ * Visible on purpose: sync tools commonly skip dot-folders, and this folder is
+ * exactly what has to reach the other device for two devices on one vault to
+ * share one registration bookkeeping. Kept in one place because the state root,
+ * the vault id and the setting's default all have to name the same folder — a
+ * device that looks in one and writes to another mints a second identity and
+ * duplicates every reminder it writes.
+ */
+export const DEFAULT_VAULT_STATE_FOLDER = "kairos";
+
+/** The configured folder name, normalised, with the documented default for a blank one. */
+export function vaultStateFolderName(folder: string): string {
+	const trimmed = folder.trim().replace(/^\/+|\/+$/gu, "");
+	return trimmed.length > 0 ? trimmed : DEFAULT_VAULT_STATE_FOLDER;
+}
+
 /** Plugin-dir state lives beside data.json; vault-folder state is visible to other sync tools. */
 export function stateRoot(options: StateRootOptions): string {
 	if (options.stateLocation === "vault-folder") {
-		const folder = options.vaultStateFolder.trim().replace(/^\/+|\/+$/gu, "") || ".kairos";
-		return `${folder}/state`;
+		return `${vaultStateFolderName(options.vaultStateFolder)}/state`;
 	}
 	return `${options.pluginDir.replace(/\/+$/u, "")}/state`;
 }

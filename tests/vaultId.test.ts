@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 import { loadVaultId, readVaultId, VAULT_ID_FILE } from "../src/vaultId";
+import { DEFAULT_VAULT_STATE_FOLDER } from "../src/schedule/stateStore";
 import type { DataAdapter } from "obsidian";
 
 /** An adapter over a Map: enough for `exists`, `read`, `write` and `mkdir`. */
@@ -77,8 +78,10 @@ describe("the vault id", () => {
 	});
 
 	it("uses the documented folder when the setting is blank", async () => {
+		// The same folder the state root uses: a device that reads the id from one
+		// folder and writes its state to another mints a second identity.
 		const adapter = fakeAdapter();
 		await loadVaultId(adapter, "  ", "", () => "id");
-		expect(adapter.files.has(`.kairos/${VAULT_ID_FILE}`)).toBe(true);
+		expect(adapter.files.has(`${DEFAULT_VAULT_STATE_FOLDER}/${VAULT_ID_FILE}`)).toBe(true);
 	});
 });

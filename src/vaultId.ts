@@ -1,4 +1,5 @@
 import type { DataAdapter } from "obsidian";
+import { vaultStateFolderName } from "./schedule/stateStore";
 
 /**
  * The vault's shared identity, kept in the vault rather than in each device.
@@ -22,15 +23,9 @@ import type { DataAdapter } from "obsidian";
 /** The file name inside the vault's state folder. */
 export const VAULT_ID_FILE = "vault-id";
 
-/** The folder, normalised, with the documented default for an empty setting. */
-function stateFolder(folder: string): string {
-	const trimmed = folder.trim().replace(/^\/+|\/+$/gu, "");
-	return trimmed.length > 0 ? trimmed : ".kairos";
-}
-
 /** The identity, or `""` when there is none to read. */
 export async function readVaultId(adapter: DataAdapter, folder: string): Promise<string> {
-	const path = `${stateFolder(folder)}/${VAULT_ID_FILE}`;
+	const path = `${vaultStateFolderName(folder)}/${VAULT_ID_FILE}`;
 	try {
 		if (!(await adapter.exists(path))) {
 			return "";
@@ -61,7 +56,7 @@ export async function loadVaultId(
 	}
 	const id = existing.trim().length > 0 ? existing.trim() : createId();
 	try {
-		const path = `${stateFolder(folder)}/${VAULT_ID_FILE}`;
+		const path = `${vaultStateFolderName(folder)}/${VAULT_ID_FILE}`;
 		const dir = path.slice(0, path.lastIndexOf("/"));
 		if (!(await adapter.exists(dir))) {
 			await adapter.mkdir(dir);

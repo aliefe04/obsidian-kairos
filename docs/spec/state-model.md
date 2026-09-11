@@ -168,9 +168,15 @@ Why this shape — Obsidian Sync semantics are load-bearing here:
 
 **Optional shared-state mode.** Cross-device lease/acks only work if state syncs. Obsidian Sync can
 sync `.obsidian`; iCloud/OneDrive/Syncthing users may not want it to. A setting
-`stateLocation: 'plugin-dir' | 'vault-folder'` relocates `state/` to `.kairos/` in the vault
-(synced by everything, visible in the file explorer only if the user shows hidden folders). Default
-is `plugin-dir`; the tradeoff is stated in the setting's description, not hidden in docs.
+`stateLocation: 'plugin-dir' | 'vault-folder'` relocates `state/` to `kairos/` in the vault, where
+every sync tool carries it. The folder name is visible on purpose — sync tools commonly skip
+dot-folders, and this folder is the one thing that has to reach a second device for two devices to
+share one registration bookkeeping. Default is `plugin-dir`; the tradeoff is stated in the setting's
+description, not hidden in docs.
+
+The vault's identity (`vault-id`, see §5) is read from this same folder rather than from each
+device's `data.json`: a reminder's instance id is derived from it, so two devices that disagree
+about it each write their own copy of the same reminder.
 
 ## 5. Secrets
 

@@ -1,5 +1,6 @@
 import { PluginSettingTab, type App, type Plugin, type SettingDefinition, type SettingDefinitionItem } from "obsidian";
 import { listLocaleTags } from "./parse/locales/index";
+import { DEFAULT_VAULT_STATE_FOLDER } from "./schedule/stateStore";
 
 export type CatchUpPolicy = "fire_now_with_age" | "fold_into_digest" | "skip_and_mark_missed";
 export type Severity = "alarm" | "digest";
@@ -90,10 +91,7 @@ export const DEFAULT_SETTINGS: KairosSettings = {
 	completingStatusChars: "xX-",
 	annotateInNote: false,
 	stateLocation: "plugin-dir",
-	// Visible on purpose: sync tools (LiveSync, iCloud, Syncthing) commonly skip
-	// dot-folders, and this folder is exactly what has to reach the other device for
-	// two of them to share one registration bookkeeping.
-	vaultStateFolder: "kairos",
+	vaultStateFolder: DEFAULT_VAULT_STATE_FOLDER,
 	locale: "en",
 	includeNoteName: false,
 	desktopEnabled: true,

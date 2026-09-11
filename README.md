@@ -80,7 +80,7 @@ Electron's `safeStorage` is desktop-only. An ntfy topic name is the secret: trea
 
 Settings: quiet hours, digest windows, lead time, grace time and the catch-up policy
 (`fire_now_with_age`, `fold_into_digest`, `skip_and_mark_missed`), locale, and where state is kept
-(plugin folder, or `.kairos/` in the vault when you want other sync tools to carry it).
+(plugin folder, or a visible `kairos/` folder in the vault when you want other sync tools to carry it).
 
 ## Differences from Reminder and Tasks
 
