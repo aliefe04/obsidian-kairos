@@ -7,7 +7,7 @@ import {
 	type OutboundMessage,
 } from "../src/channels/types";
 import type { KairosSettings } from "../src/settings";
-import { channelContext, makeEngine, parsedReminder, testSettings, type EngineHarness } from "./support";
+import { channelContext, makeEngine, parsedReminder, scheduledChannelsOf, testSettings, type EngineHarness } from "./support";
 
 const DUE = Date.UTC(2026, 8, 11, 9, 0);
 const DUE_LOCAL = "2026-09-11T09:00";
@@ -81,8 +81,9 @@ function harness(settingsOverrides: Partial<KairosSettings> = {}): EngineHarness
 		// The fire path, wired the way `main.ts` wires it: the channels that deliver
 		// without a server.
 		send: async (message) => combinedResult(await registry.deliverLocal(message, context)),
-		sendScheduled: async (message) => combinedResult(await registry.deliverScheduled(message, context)),
-		clearScheduled: async (instanceId, pushId) => registry.clearInstance(instanceId, context, pushId),
+		sendScheduled: async (message, _record, channels) => registry.deliverScheduled(message, context, channels),
+		clearScheduled: async (instanceId, pushIds) => registry.clearInstance(instanceId, context, pushIds),
+		scheduledChannels: scheduledChannelsOf(registry, settings),
 	});
 	return { ...engine, server, local };
 }
@@ -115,7 +116,7 @@ describe("one push per reminder per due time", () => {
 		expect(secondPass.cleared).toEqual([]);
 		// The pending id is not withdrawn by the pass that skipped it.
 		expect(h.server.cleared).toEqual([]);
-		expect(h.store.instances.get(id)?.pushId).toBe("push-1");
+		expect(h.store.instances.get(id)?.pushIds?.["fake-server"]).toBe("push-1");
 		expect(h.store.instances.get(id)?.pushFor).toBe(DUE_LOCAL);
 	});
 

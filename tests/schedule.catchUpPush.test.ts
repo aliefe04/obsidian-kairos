@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ChannelRegistry, combinedResult, type ChannelContext, type DeliveryChannel, type OutboundMessage } from "../src/channels/types";
 import type { KairosSettings } from "../src/settings";
-import { channelContext, makeEngine, outboundMessage, parsedReminder, testSettings, type EngineHarness } from "./support";
+import { channelContext, makeEngine, outboundMessage, parsedReminder, scheduledChannelsOf, testSettings, type EngineHarness } from "./support";
 
 const DUE = Date.UTC(2026, 8, 11, 9, 0);
 const DUE_LOCAL = "2026-09-11T09:00";
@@ -78,8 +78,9 @@ function harness(): FireHarness {
 				: await registry.deliver(message, context);
 			return combinedResult(results);
 		},
-		sendScheduled: async (message) => combinedResult(await registry.deliverScheduled(message, context)),
-		clearScheduled: async (instanceId, pushId) => registry.clearInstance(instanceId, context, pushId),
+		sendScheduled: async (message, _record, channels) => registry.deliverScheduled(message, context, channels),
+		clearScheduled: async (instanceId, pushIds) => registry.clearInstance(instanceId, context, pushIds),
+		scheduledChannels: scheduledChannelsOf(registry, settings),
 	});
 	return { ...engine, server, local, fires };
 }
@@ -104,7 +105,7 @@ describe("the fire path and the registration that covers it", () => {
 
 		// The registration itself is untouched by the fire — it is the push the
 		// provider is holding for this due time.
-		expect(h.store.instances.get(id)?.pushId).toBe("push-1");
+		expect(h.store.instances.get(id)?.pushIds?.["fake-server"]).toBe("push-1");
 		expect(h.store.instances.get(id)?.pushFor).toBe(DUE_LOCAL);
 	});
 
@@ -148,7 +149,7 @@ describe("the fire path and the registration that covers it", () => {
 		expect(pass.cleared).toEqual([id]);
 		expect(h.server.cleared).toEqual([id]);
 		expect(h.server.clearedPushIds).toEqual(["push-1"]);
-		expect(h.store.instances.get(id)?.pushId).toBeUndefined();
+		expect(h.store.instances.get(id)?.pushIds?.["fake-server"]).toBeUndefined();
 		expect(h.store.instances.get(id)?.pushFor).toBeUndefined();
 	});
 
@@ -171,7 +172,7 @@ describe("the fire path and the registration that covers it", () => {
 		expect(pass.cleared).toEqual([id]);
 		expect(h.server.cleared).toEqual([]);
 		expect(h.server.clearedPushIds).toEqual([]);
-		expect(h.store.instances.get(id)?.pushId).toBeUndefined();
+		expect(h.store.instances.get(id)?.pushIds?.["fake-server"]).toBeUndefined();
 		expect(h.store.instances.get(id)?.pushFor).toBeUndefined();
 	});
 
@@ -203,7 +204,7 @@ describe("the fire path and the registration that covers it", () => {
 			expect(pass.sent).toEqual([]);
 			expect(pass.cleared).toEqual([]);
 			expect(h.server.sent).toHaveLength(1);
-			expect(h.store.instances.get(id)?.pushId).toBe("push-1");
+			expect(h.store.instances.get(id)?.pushIds?.["fake-server"]).toBe("push-1");
 			expect(h.store.instances.get(id)?.pushFor).toBe(DUE_LOCAL);
 
 			const tick = await h.engine.tick();
@@ -222,7 +223,7 @@ describe("the fire path and the registration that covers it", () => {
 			expect(after.cleared).toEqual([id]);
 			expect(h.server.cleared).toEqual([]);
 			expect(h.server.clearedPushIds).toEqual([]);
-			expect(h.store.instances.get(id)?.pushId).toBeUndefined();
+			expect(h.store.instances.get(id)?.pushIds?.["fake-server"]).toBeUndefined();
 			expect(h.store.instances.get(id)?.pushFor).toBeUndefined();
 		}
 	});

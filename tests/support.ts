@@ -3,7 +3,7 @@
  * an in-memory state store, and a reminder factory.
  */
 
-import type { ChannelContext, OutboundMessage } from "../src/channels/types";
+import type { ChannelContext, DeliveryChannel, OutboundMessage } from "../src/channels/types";
 import type { ParsedReminder, ParseSettings } from "../src/parse/parseNote";
 import {
 	ScheduleEngine,
@@ -179,6 +179,29 @@ export interface HarnessOptions {
 	send?: EngineOptions["send"];
 	sendScheduled?: EngineOptions["sendScheduled"];
 	clearScheduled?: EngineOptions["clearScheduled"];
+	scheduledChannels?: EngineOptions["scheduledChannels"];
+}
+
+/**
+ * The engine's view of a registry's server-scheduled channels, composed the way
+ * `main.ts` composes it: registration is filtered by configuration, withdrawal
+ * and cleanup are not, so a channel switched off after registering can still be
+ * asked to take its registration back.
+ */
+export function scheduledChannelsOf(
+	registry: { all(): DeliveryChannel[] },
+	settings: KairosSettings,
+): EngineOptions["scheduledChannels"] {
+	return () =>
+		registry
+			.all()
+			.filter((channel) => channel.mode === "server-scheduled")
+			.map((channel) => ({
+				id: channel.id,
+				configured: channel.isConfigured(settings),
+				horizonDays: channel.scheduleHorizonDays,
+				deleteAfterDue: channel.deleteAfterDue,
+			}));
 }
 
 export function makeEngine(options: HarnessOptions = {}): EngineHarness {
@@ -202,6 +225,7 @@ export function makeEngine(options: HarnessOptions = {}): EngineHarness {
 				return Promise.resolve({ ok: true });
 			}),
 		sendScheduled: options.sendScheduled,
+		scheduledChannels: options.scheduledChannels,
 		clearScheduled:
 			options.clearScheduled ??
 			((instanceId) => {

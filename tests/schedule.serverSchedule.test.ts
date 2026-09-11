@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ChannelRegistry, combinedResult, type ChannelContext, type DeliveryChannel, type OutboundMessage } from "../src/channels/types";
+import { ChannelRegistry, type ChannelContext, type DeliveryChannel, type OutboundMessage } from "../src/channels/types";
 import type { KairosSettings } from "../src/settings";
-import { channelContext, makeEngine, parsedReminder, testSettings, type EngineHarness, type MemoryStore } from "./support";
+import { channelContext, makeEngine, parsedReminder, scheduledChannelsOf, testSettings, type EngineHarness, type MemoryStore } from "./support";
 
 const DUE = Date.UTC(2026, 8, 11, 9, 0);
 const NOW = DUE - 60 * 60 * 1000;
@@ -66,8 +66,9 @@ function harness(options: { serverConfigured?: boolean; store?: MemoryStore } = 
 	const engine = makeEngine({
 		now: NOW,
 		store: options.store,
-		sendScheduled: async (message) => combinedResult(await registry.deliverScheduled(message, context)),
-		clearScheduled: async (instanceId, pushId) => registry.clearInstance(instanceId, context, pushId),
+		sendScheduled: async (message, _record, channels) => registry.deliverScheduled(message, context, channels),
+		clearScheduled: async (instanceId, pushIds) => registry.clearInstance(instanceId, context, pushIds),
+		scheduledChannels: scheduledChannelsOf(registry, settings),
 	});
 	return { ...engine, server, local };
 }
@@ -111,7 +112,7 @@ describe("ScheduleEngine syncServerScheduled", () => {
 		expect(second.sent).toEqual([]);
 		expect(second.cleared).toEqual([]);
 		expect(h.server.sent).toHaveLength(1);
-		expect(h.store.instances.get(id)?.pushId).toBe("push-1");
+		expect(h.store.instances.get(id)?.pushIds?.["fake-server"]).toBe("push-1");
 		expect(h.store.instances.get(id)?.pushFor).toBe("2026-09-11T09:00");
 	});
 
@@ -168,7 +169,7 @@ describe("ScheduleEngine syncServerScheduled", () => {
 		await h.engine.sync([reminder]);
 		const id = h.engine.instanceIdOf(reminder);
 		await h.engine.syncServerScheduled();
-		expect(h.store.instances.get(id)?.pushId).toBe("push-1");
+		expect(h.store.instances.get(id)?.pushIds?.["fake-server"]).toBe("push-1");
 
 		// The record can hold a due time that no longer matches the push it carries
 		// — a folded catch-up or an external edit leaves that behind — and the stale
@@ -185,7 +186,7 @@ describe("ScheduleEngine syncServerScheduled", () => {
 		expect(h.server.sent).toHaveLength(2);
 		expect(h.server.cleared).toEqual([id]);
 		expect(h.server.clearedPushIds).toEqual(["push-1"]);
-		expect(h.store.instances.get(id)?.pushId).toBe("push-2");
+		expect(h.store.instances.get(id)?.pushIds?.["fake-server"]).toBe("push-2");
 		expect(h.store.instances.get(id)?.pushFor).toBe("2026-09-11T09:50");
 	});
 
@@ -195,7 +196,7 @@ describe("ScheduleEngine syncServerScheduled", () => {
 		await first.engine.sync([reminder]);
 		const id = first.engine.instanceIdOf(reminder);
 		await first.engine.syncServerScheduled();
-		expect(first.store.instances.get(id)?.pushId).toBe("push-1");
+		expect(first.store.instances.get(id)?.pushIds?.["fake-server"]).toBe("push-1");
 
 		// A new engine over the same state is a restart: the id comes from disk, not
 		// from a field the old process was holding.

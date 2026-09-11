@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { DeliveryResult, OutboundMessage } from "../src/channels/types";
+import type { ChannelDelivery, OutboundMessage } from "../src/channels/types";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { SCHEDULE_BACKOFF_BASE_MS, SCHEDULE_BACKOFF_MAX_MS, SCHEDULE_RETRY_MARGIN_MS } from "../src/schedule/engine";
 import { makeEngine, parsedReminder, type EngineHarness } from "./support";
@@ -30,14 +30,17 @@ function harness(options: { now: number; horizonDays?: number }): HorizonHarness
 	const engine = makeEngine({
 		now: options.now,
 		...(options.horizonDays === undefined ? {} : { settings: { serverScheduleHorizonDays: options.horizonDays } }),
-		sendScheduled: (_message: OutboundMessage): Promise<DeliveryResult> => {
+		sendScheduled: (_message: OutboundMessage, _record, channels): Promise<ChannelDelivery[]> => {
 			recorder.attempts += 1;
 			if (recorder.failNext > 0) {
 				recorder.failNext -= 1;
-				return Promise.resolve({ ok: false, detail: "ntfy returned 400" });
+				return Promise.resolve(channels.map((channelId) => ({ channelId, result: { ok: false, detail: "ntfy returned 400" } })));
 			}
-			return Promise.resolve({ ok: true });
+			return Promise.resolve(channels.map((channelId, index) => ({ channelId, result: { ok: true, id: `push-${index}` } })));
 		},
+		// The provider the horizon exists for: no ceiling of its own, so the settings
+		// value decides, exactly as it did before channels could differ.
+		scheduledChannels: () => [{ id: "fake-server", configured: true }],
 	});
 	return { ...engine, recorder };
 }

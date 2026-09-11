@@ -83,8 +83,25 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 				// late push is the delivery, and for a missed reminder the only one.
 				return this.deliverEverywhere(message);
 			},
-			sendScheduled: (message) => this.deliverServerScheduled(message),
-			clearScheduled: (instanceId, pushId) => this.registry.clearInstance(instanceId, this.channelContext(), pushId),
+			// Each registration carries its channel's own id, so a record can hold one
+			// per channel: two server-scheduled channels at once and a single collapsed
+			// id would leave one registration permanently unwithdrawable.
+			sendScheduled: (message, _record, channels) => this.registry.deliverScheduled(message, this.channelContext(), channels),
+			clearScheduled: (instanceId, pushIds) => this.registry.clearInstance(instanceId, this.channelContext(), pushIds),
+			// Every registered server-scheduled channel, switched on or not: the engine
+			// registers only with the configured ones, but must still be able to
+			// withdraw and clean up what a channel registered before it was switched
+			// off — including deleting a real entry whose due time has gone by.
+			scheduledChannels: () =>
+				this.registry
+					.all()
+					.filter((channel) => channel.mode === "server-scheduled")
+					.map((channel) => ({
+						id: channel.id,
+						configured: channel.isConfigured(this.settings),
+						horizonDays: channel.scheduleHorizonDays,
+						deleteAfterDue: channel.deleteAfterDue,
+					})),
 			onDeliver: (record, message) => {
 				if (record.severity === "alarm" && message.actions) {
 					// The summary is deliberately title-free, so the title is composed
@@ -532,10 +549,6 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 		return combinedResult(await this.registry.deliverLocal(message, this.channelContext()));
 	}
 
-	private async deliverServerScheduled(message: OutboundMessage): Promise<DeliveryResult> {
-		return combinedResult(await this.registry.deliverScheduled(message, this.channelContext()));
-	}
-
 	/** Mirrors the live index into the channels that deliver with the app closed. */
 	private async syncServerSchedule(): Promise<void> {
 		const engine = this.engine;
@@ -555,8 +568,9 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 			return "push scheduling: no pass yet";
 		}
 		// A registered push is one the server is holding for this device; the count
-		// is the same store the engine reads, so it survives a restart.
-		const pending = this.engine?.snapshot().filter((record) => record.pushId !== undefined).length ?? 0;
+		// is the same store the engine reads, so it survives a restart. A record can
+		// hold one per server-scheduled channel.
+		const pending = this.engine?.snapshot().filter((record) => Object.keys(record.pushIds ?? {}).length > 0).length ?? 0;
 		return `push scheduling: ${pass.sent.length} registered, ${pending} pending, ${pass.failed.length} failed, ${pass.deferred.length} deferred, ${pass.cleared.length} cleared`;
 	}
 

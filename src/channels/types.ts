@@ -31,6 +31,19 @@ export interface DeliveryResult {
 	id?: string;
 }
 
+/**
+ * One channel's outcome, kept apart from its neighbours'.
+ *
+ * A `server-scheduled` fan-out has to remember *which* channel holds which
+ * registration: two of them enabled at once and a single collapsed result would
+ * lose one channel's id, leaving that registration impossible to withdraw — the
+ * reminder would fire after the task was completed, and nothing could stop it.
+ */
+export interface ChannelDelivery {
+	channelId: string;
+	result: DeliveryResult;
+}
+
 export interface ChannelContext {
 	now: number;
 	deviceId: string;
@@ -54,6 +67,22 @@ export interface DeliveryChannel {
 	name: string;
 	mode: ChannelMode;
 	isConfigured(settings: KairosSettings): boolean;
+	/**
+	 * How far ahead this channel may be registered, in days. Defaults to
+	 * `settings.serverScheduleHorizonDays`, which exists because `ntfy.sh` refuses
+	 * a longer delay than three days. A channel that owns entries on a server of
+	 * its own — a calendar, a Reminders list — has no such ceiling and should say so,
+	 * or a reminder two months out would never be registered anywhere.
+	 */
+	scheduleHorizonDays?: number;
+	/**
+	 * Whether a registration whose due time has already passed should be deleted
+	 * when the record stops wanting it. Off for channels whose provider treats a
+	 * delete of a delivered notification as the user dismissing it (`ntfy`); on for
+	 * one that owns a real entry, which would otherwise linger in a list forever
+	 * after the task was completed.
+	 */
+	deleteAfterDue?: boolean;
 	send(msg: OutboundMessage, ctx: ChannelContext): Promise<DeliveryResult>;
 	/**
 	 * Cancel a push that was scheduled on a server; `pushId` is the id the
@@ -117,9 +146,28 @@ export class ChannelRegistry {
 		return this.deliverTo(this.configured(ctx.settings).filter((channel) => channel.mode === "local"), msg, ctx);
 	}
 
-	/** The same, restricted to the channels that schedule on their own server. */
-	async deliverScheduled(msg: OutboundMessage, ctx: ChannelContext): Promise<DeliveryResult[]> {
-		return this.deliverTo(this.configured(ctx.settings).filter((channel) => channel.mode === "server-scheduled"), msg, ctx);
+	/**
+	 * The same, restricted to the channels that schedule on their own server.
+	 *
+	 * `onlyChannelIds` names the channels that still need a registration for the due
+	 * time being registered — one that already holds it must not be sent to again,
+	 * because republishing is not a replacement on every provider. Each result keeps
+	 * the id of the channel that produced it, so the engine can track one
+	 * registration per channel instead of collapsing them into one slot.
+	 */
+	async deliverScheduled(msg: OutboundMessage, ctx: ChannelContext, onlyChannelIds?: string[]): Promise<ChannelDelivery[]> {
+		const scheduled = this.configured(ctx.settings).filter(
+			(channel) => channel.mode === "server-scheduled" && (onlyChannelIds === undefined || onlyChannelIds.includes(channel.id)),
+		);
+		const results: ChannelDelivery[] = [];
+		for (const channel of scheduled) {
+			try {
+				results.push({ channelId: channel.id, result: await channel.send(msg, ctx) });
+			} catch (error) {
+				results.push({ channelId: channel.id, result: { ok: false, detail: `${channel.id}: ${describeError(error)}` } });
+			}
+		}
+		return results;
 	}
 
 	private async deliverTo(channels: DeliveryChannel[], msg: OutboundMessage, ctx: ChannelContext): Promise<DeliveryResult[]> {
@@ -134,13 +182,25 @@ export class ChannelRegistry {
 		return results;
 	}
 
-	async clearInstance(instanceId: string, ctx: ChannelContext, pushId?: string): Promise<void> {
+	/**
+	 * Withdraws one instance from every channel that holds it. Each channel is
+	 * given *its own* id: the ids are not interchangeable, since an id minted by one
+	 * provider means nothing to another, and handing the wrong one over deletes
+	 * nothing at all — silently, because that is what the providers answer.
+	 * A channel absent from `pushIds` is skipped; `pushIds` undefined keeps the old
+	 * behaviour of telling every channel to cancel what it holds for the instance.
+	 */
+	async clearInstance(instanceId: string, ctx: ChannelContext, pushIds?: Array<{ channelId: string; pushId?: string }>): Promise<void> {
 		for (const channel of this.all()) {
 			if (!channel.clear) {
 				continue;
 			}
+			const entry = pushIds?.find((candidate) => candidate.channelId === channel.id);
+			if (pushIds !== undefined && entry === undefined) {
+				continue;
+			}
 			try {
-				await channel.clear(instanceId, ctx, pushId);
+				await channel.clear(instanceId, ctx, entry?.pushId);
 			} catch {
 				// A failed cancellation is not worth an alert: the push expires on its own.
 			}
