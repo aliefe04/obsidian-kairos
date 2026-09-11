@@ -125,7 +125,7 @@ stacks under `/opt`:
 | Account URL (the iOS setting) | `https://192.168.1.56:5233/kairos/` — the **server**, not the collection, and over **TLS**. iOS asks for `current-user-principal` and finds the collection itself; measured on this server, `/` answers `/kairos/` as the principal and `/kairos/` lists `kairos/kairos`. Pointing the account at the collection path instead is the usual cause of "CalDAV Account Verification Failed" |
 | TLS front | `caddy-kairos` (`caddy:2-alpine`, `network_mode: host`, `/opt/caddy/`), `https://192.168.1.56:5233` and `https://192.168.3.56:5233` → `127.0.0.1:5232`, serving a leaf from **this deployment's own CA** (`/opt/caddy/kairos-ca.sh`; root ten years, leaf two years, both addresses in the leaf's SAN) loaded with `tls <cert> <key>`. Radicale itself is untouched on 5232, which is what the plugin on the desktop uses. **Not** `tls internal`: that issues one certificate per name, which a no-SNI client cannot choose between, and Caddy's local authority signs with a short-lived intermediate it rotates (measured: seven days, against a leaf claiming two years) — a hand-signed leaf would break the installed chain a week later with nothing changed on this side. Refresh with `sh /opt/caddy/kairos-ca.sh` then a restart; the root is reused, so the certificate already on the phone keeps working. `sh /opt/caddy/tls-check.sh` prints what a client actually receives |
 | Addresses | The box has one interface, `192.168.1.56`. `192.168.3.56` also reaches it, through the router, and that is the address this deployment's phone was showing. The front is configured for **both**, and an **IP-literal client sends no SNI** — so the certificate cannot be chosen per name the way Caddy's `tls internal` would. The leaf is therefore issued ahead of time carrying **both** addresses in its SAN (`/opt/caddy/kairos-ca.sh`) and loaded with `tls <cert> <key>`; a no-SNI handshake is what to check, since that is what a client using a bare IP performs |
-| CA certificate | Served for installation at `http://192.168.1.56:5234/kairos-ca.crt` from the same container, so installing it does not depend on another machine being awake. A public key: nothing secret is exposed by serving it |
+| CA certificate | Served for installation at `http://192.168.1.56:5234/kairos-ca.crt` from the same container, so installing it does not depend on another machine being awake. **Exactly one path is served**, out of a directory holding only that file, with no `browse` and no handler rooted at the CA's own directory — see *Keep the signing key out of the served tree* |
 
 **Observed: over plain HTTP the account never authenticated.** With the account
 pointed at `http://…:5232/`, the phone's own DAV clients reached the server and
@@ -160,6 +160,47 @@ certificate iOS trusts without any profile install — attractive, but it expose
 the reminder collection to the internet and changes a tunnel other services
 depend on, so it is left for a deliberate decision. The local-CA front below is
 what this deployment uses instead: LAN-only, no public exposure.
+
+## Keep the signing key out of the served tree
+
+A private key reachable over HTTP is worse than it looks. Whoever fetches the
+**root CA's** key can mint a certificate for any name and impersonate this server
+to every device that trusts that CA — and installing the root is exactly what the
+next section asks the phone to do. The key is the trust anchor; serving it hands
+over the ability to be trusted.
+
+This deployment did serve it. The port that offers the certificate for
+installation was rooted at the CA's own directory with directory browsing on, so
+`GET http://…:5234/local-ca.key` returned the root signing key over plain HTTP,
+and `GET /` listed the whole directory. Two independent mistakes produced that: a
+handler rooted somewhere that holds secrets, and `browse` turning a wrong path
+into a discoverable one. It was found by reading the config back rather than by
+anything failing — nothing about the setup misbehaved, which is what makes this
+kind of exposure easy to leave in place.
+
+The layout now separates the two by construction:
+
+| Path | Holds | Mounted | Served |
+| --- | --- | --- | --- |
+| `/opt/caddy/public` | the root certificate only | read-only | yes, that one file |
+| `/opt/caddy/secrets` | root key, leaf key, leaf, serial | read-only | **no** — no handler is rooted here |
+
+Rules that follow, and are worth keeping if this is rebuilt:
+
+- Nothing that holds a key is ever a `file_server` root. The TLS listener reads
+  its key from a mount no handler points at.
+- No `browse` on a port that exists to hand out a certificate. With browsing off,
+  a wrong path is a `404` instead of an index of everything nearby.
+- After any change, fetch the paths that must **not** work and confirm they are
+  `404` — the keys, the other certificates, and `/` itself. Checking that the one
+  path that should work does work says nothing about the rest.
+
+**A key that was served has to be treated as disclosed.** The CA was rotated after
+this (`sh /opt/caddy/kairos-ca.sh --rotate-root`), so the old root and everything
+it signed are worthless, and the root now installed on a device is a different
+one — a profile installed before this date is not the one the server presents.
+Rotation is cheap only before anyone has installed the profile; after that it is a
+visit to every device.
 
 ## Reachability
 
@@ -259,9 +300,15 @@ the usual cause of *"CalDAV Account Verification Failed"*.
    → *Allow* the profile → **Settings → Profile Downloaded → Install** → then
    **Settings → General → About → Certificate Trust Settings** and switch on
    *Kairos Local CA*. Both steps are required; the profile alone leaves a
-   certificate the phone still refuses. (An earlier attempt on this deployment
-   installed *Caddy Local Authority* instead; if that entry is still in the list,
-   enabling it changes nothing — the served root is `Kairos Local CA`.)
+   certificate the phone still refuses.
+
+   The CA was rotated after its signing key was exposed (see *Keep the signing key
+   out of the served tree*), so **any profile installed earlier is the wrong one**:
+   the trusted root now has fingerprint
+   `A1:89:DC:BE:28:BC:E9:E3:3D:5F:C8:0F:93:A4:E4:4B:97:DE:1A:F8:B4:42:24:3E:4C:CF:E5:84:5E:F2:89:F5`.
+   If an entry from a previous attempt is still in the list, remove it — a stale
+   *Caddy Local Authority* or an older *Kairos Local CA* entry changes nothing and
+   only makes the list harder to read.
 2. **Settings → Reminders → Reminders Accounts → Add Account → Other → Add
    CalDAV Account.** (Under Reminders, not under Calendar — that is where the
    lists end up.)
