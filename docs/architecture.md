@@ -103,9 +103,11 @@ export interface DeliveryChannel {
 ```
 
 `mode: 'server-scheduled'` means the engine hands the channel upcoming reminders ahead of time
-(rolling horizon, re-registered on every index change) so delivery survives the app being closed.
-Adding a channel touches no engine code and needs no maintainer approval beyond review — this is the
-main community growth lane.
+(rolling horizon, registered once per due time and left alone while the index still wants it) so
+delivery survives the app being closed. The fire path — a reminder that has reached its due time —
+goes to the `local` channels only: the server already holds the registration for that due time, and a
+second publish would be a second push. Adding a channel touches no engine code and needs no
+maintainer approval beyond review — this is the main community growth lane.
 
 **A new locale** is a data file in `parse/locales/` plus fixtures. No parser change.
 

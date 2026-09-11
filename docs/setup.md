@@ -59,8 +59,9 @@ a chosen time, which is what lets the alert arrive while Obsidian is closed.
 4. Run **Test notification** from the command palette. The push must arrive on the phone.
 
 How it works: when the vault index changes, Kairos sends every reminder due inside the horizon to the
-server with an `X-At` time. The server holds the message and delivers it at that time. Each reminder
-carries an id, so a repeated registration replaces the earlier one instead of duplicating it.
+server with an `X-At` time. The server holds the message and delivers it at that time. Each
+registration carries an id, and the plugin remembers it: a reminder already registered is not
+registered again, so one reminder is one push.
 
 Limits, stated in the settings too:
 

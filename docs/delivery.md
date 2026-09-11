@@ -70,6 +70,20 @@ Design rules for every push channel:
    once per due time — a repeat publish arrives as a second push, not a replacement) with
    `X-At`-style offsets, so the alert survives Obsidian being closed for days — the specific failure
    of the incumbent's 24-hour window.
+   - **One registration per reminder per due time, whichever pass makes it.** The passes are
+     serialized inside the engine, so two of them cannot both read the record before either has
+     written what it registered. They do overlap in the ordinary course of a launch: `start()` awaits
+     `rescan()`, whose `scanAll()` fires the index callback for every note it reads, and that callback
+     runs its own pass. The second pass waits, sees the registration the first one wrote, and
+     publishes nothing. A pass also reads its clock once it is the only one running, so a pass that
+     waited behind a slow registration cannot treat a due time that has already begun as still ahead.
+   - **A due time that has begun is never registered.** `ntfy` clamps `X-At` to ten seconds out, so a
+     registration for a due time that has just passed is not a late registration — it is a second
+     alert ten seconds after the real one. A reminder that is firing, catching up, being notified,
+     folded into a digest or re-armed is delivered through the `local` channels only, and a pending
+     registration for a due time that has begun is withdrawn instead of being published again. A
+     re-arm to a due time still in the future is registered like any other future time: nothing
+     server-side holds it yet.
 3. **Two-way cancel, best-effort.** Completing or rescheduling a task deletes the scheduled push by the
    message id the publish returned (`DELETE /<topic>/<id>`), and that id is persisted on the instance
    record, so the handle survives a restart. Whether the delete takes effect is the client's, not the
@@ -123,6 +137,7 @@ an owned, reviewed app on two stores, and it re-solves a problem ntfy/Bark alrea
 | Due while closed, > `grace`, user policy `fire_now_with_age` (**default**) | Fire on launch with the age in the text ("09:00 — 2 h ago") |
 | Same, policy `fold_into_digest` | Deferred to the next digest window (default 08:00 / 18:00) |
 | Same, policy `skip_and_mark_missed` | No alert; the record is marked missed and visible in the agenda view |
+| A catch-up fires, folds into a digest, or is re-armed | Delivered through the local channels only. No server push is registered for the due time that has already begun — `ntfy` would clamp it to ten seconds out and deliver a second alert. A re-arm to a digest window still in the future is registered normally, because nothing server-side holds that time yet |
 | Inside quiet hours (decided when the note is parsed, from the time written) | Folded into the next digest, always — even for alarms |
 | Alert fires on two devices at once | The lease decides; the loser receives nothing and records nothing |
 

@@ -107,6 +107,20 @@ Rules that are easy to get wrong, so they are stated here then tested:
   their `catchUp` policy. Default `grace` is 15 minutes; default policy is `fire_now_with_age`
   (the alert says "09:00 — 2h ago"), because a silently dropped alarm is the single most common
   complaint in this market. `skip_and_mark_missed` exists for people who hate late alerts.
+- **One push per due time.** A server-scheduled channel is a mirror of the index, not a delivery
+  target: the engine registers a reminder ahead of its due time, stores the provider's message id and
+  the `dueLocal` it was registered for on the record (`pushFor`), and publishes nothing again while
+  those still match. A *firing* or catch-up re-armed reminder must not register a new one — ntfy
+  clamps a schedule that has already begun to ten seconds out (`MIN_SERVER_DELAY_SECONDS`), so the
+  "duplicate" would land ten seconds *after* the alert it duplicates. A reminder that fires delivers
+  through the local channels only. Traced in the real app on 2026-09-11: one reminder, three
+  deliveries (two at the due second, one at due+10 s) before this rule held.
+- **Record-set operations are serialized.** `load`, `sync`, `syncServerScheduled`, `ack`, `setMuted`
+  and the snooze writes run one at a time in a FIFO queue; a pass queued behind another runs after it
+  and reads its clock once it owns the queue, so a pass that waited cannot mistake an already-started
+  due time for a future one. Ticks stay outside the queue (they join the running one). The rule exists
+  because two overlapping passes both read a record whose registration had not been written yet and
+  both published — the two push ids two seconds apart in that same trace.
 - **Two severities.** `alarm` = interrupt now (OS notification, sound, modal). `digest` = batched at
   a user-configured window (default 08:00 and 18:00). A reminder whose written time is inside quiet
   hours is a digest item, decided when the note is parsed. A catch-up older than `grace` keeps its own

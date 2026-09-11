@@ -11,6 +11,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   replace a pending scheduled message when the same `X-Sequence-ID` is published again — both copies
   are delivered — so the engine now remembers the registration: the instance record stores the
   `dueLocal` the push was made for (`pushFor`) and an unchanged reminder is not published at all.
+- **Two overlapping passes still registered the same reminder twice.** The record-set operations were
+  serialized nowhere, so a pass triggered by the indexer could read a record before the pass ahead of
+  it had written `pushFor` and publish a second push. Traced in the real app on 2026-09-11: two
+  registrations two seconds apart for one reminder, both delivered at the same due second.
+  `load`, `sync`, `syncServerScheduled`, `ack`, `setMuted` and the snooze writes now run one at a time
+  in a FIFO queue.
+- **A firing reminder published a second push ten seconds later.** The fire path sent to every
+  configured channel, so the firing tick re-published to the server-scheduled one; ntfy clamps a
+  schedule that has already begun to ten seconds out, so the duplicate landed after the alert it
+  duplicated (the third arrival in that trace, due 11:14 delivered 11:14:10). The fire path now uses
+  the local channels only; `Test notification` still reaches all of them.
 - **Completing or rescheduling a task did not cancel its push.** Cancellation was an empty-body
   publish carrying `X-Sequence-ID`; `ntfy.sh` answers `200 message_delete` to a delete by sequence id
   and still delivers the message. Both facts were probed live on 2026-09-11. Cancellation now sends

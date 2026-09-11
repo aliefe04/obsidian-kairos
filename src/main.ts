@@ -66,7 +66,10 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 			platform: Platform.isMobileApp ? "mobile" : Platform.isDesktopApp ? "desktop" : "unknown",
 			pluginVersion: this.manifest.version,
 			clock: () => Date.now(),
-			send: (message) => this.deliverEverywhere(message),
+			// The fire path: the channels that deliver without a server. The
+			// server-scheduled ones are registered ahead of time, and publishing
+			// again here would be a second push for this reminder's due time.
+			send: (message) => this.deliverLocally(message),
 			sendScheduled: (message) => this.deliverServerScheduled(message),
 			clearScheduled: (instanceId, pushId) => this.registry.clearInstance(instanceId, this.channelContext(), pushId),
 			onDeliver: (record, message) => {
@@ -498,8 +501,8 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 	}
 
 	/** One instance, one outcome: a fan-out reports success if any channel delivered. */
-	private async deliverEverywhere(message: OutboundMessage): Promise<DeliveryResult> {
-		return combinedResult(await this.registry.deliver(message, this.channelContext()));
+	private async deliverLocally(message: OutboundMessage): Promise<DeliveryResult> {
+		return combinedResult(await this.registry.deliverLocal(message, this.channelContext()));
 	}
 
 	private async deliverServerScheduled(message: OutboundMessage): Promise<DeliveryResult> {

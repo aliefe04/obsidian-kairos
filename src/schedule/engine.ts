@@ -308,8 +308,49 @@ export class ScheduleEngine {
 	/** Registrations the provider refused, with the time they may be retried. */
 	private scheduleBackoff = new Map<string, { attempts: number; retryAt: number }>();
 	private loaded = false;
+	/**
+	 * The tail of the queue that serializes everything which reads or writes the
+	 * record set — `load`, `sync`, `syncServerScheduled`, `ack` and `snooze`.
+	 *
+	 * Two of those overlap in the ordinary course of a launch, and a registration
+	 * decided from a record the other one is halfway through writing is a
+	 * duplicate push. `main.start()` awaits `rescan()`, and `rescan()`'s
+	 * `scanAll()` fires the index callback for every note it reads; that callback
+	 * (`main.applyIndex`) runs its own pass, so the callback's pass is still
+	 * awaiting the provider when the rescan's own pass begins. Both then read a
+	 * record whose `pushFor` is not written yet and both publish — which is the
+	 * duplicate the real plugin produced two seconds apart at launch (observed
+	 * in `.testvault`, 2026-09-11: two ids registered at t=0 and t=2 s for one
+	 * due time).
+	 *
+	 * A queued pass runs its own pass after the one it waited for rather than
+	 * joining it, unlike `tick`: it mirrors an index that has moved on since that
+	 * pass began, so the earlier pass's answer is not its answer.
+	 *
+	 * `tick` is deliberately outside the queue. Ticks are serialized with each
+	 * other, they recompute the due set from wall-clock time on every wake, and
+	 * their deliveries go to the local channels, which publish nothing on a
+	 * server; a tick that lands mid-pass can only make a record less live, and
+	 * the pass only registers a record due in the future.
+	 */
+	private exclusive: Promise<void> = Promise.resolve();
 
 	constructor(private readonly options: EngineOptions) {}
+
+	/** Runs `operation` once every operation queued before it has finished. */
+	private async serialize<T>(operation: () => Promise<T>): Promise<T> {
+		const earlier = this.exclusive;
+		let release: () => void = () => undefined;
+		this.exclusive = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await earlier;
+		try {
+			return await operation();
+		} finally {
+			release();
+		}
+	}
 
 	private get leaseTtlMs(): number {
 		return this.options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
@@ -320,6 +361,11 @@ export class ScheduleEngine {
 	}
 
 	async load(): Promise<void> {
+		await this.serialize(() => this.loadRecords());
+	}
+
+	/** The body of `load`, without the queue: `sync` calls it while holding it. */
+	private async loadRecords(): Promise<void> {
 		const stored = await this.options.store.readInstances();
 		for (const record of stored) {
 			this.records.set(record.instanceId, record);
@@ -342,8 +388,12 @@ export class ScheduleEngine {
 
 	/** Merges a fresh parse of the vault into the stored records. */
 	async sync(parsed: ParsedReminder[], now = this.options.clock()): Promise<SyncResult> {
+		return this.serialize(() => this.mergeIndex(parsed, now));
+	}
+
+	private async mergeIndex(parsed: ParsedReminder[], now: number): Promise<SyncResult> {
 		if (!this.loaded) {
-			await this.load();
+			await this.loadRecords();
 		}
 		const seen = new Set<string>();
 		const indexedPaths = new Set<string>();
@@ -660,6 +710,15 @@ export class ScheduleEngine {
 	}
 
 	async ack(instanceId: string, now = this.options.clock()): Promise<boolean> {
+		return this.serialize(() => this.markAcked(instanceId, now));
+	}
+
+	/**
+	 * Cancels by the id the record carries, so a registration an in-flight pass
+	 * wrote while this ack was queued behind it is withdrawn rather than left to
+	 * buzz for a reminder the user just completed.
+	 */
+	private async markAcked(instanceId: string, now: number): Promise<boolean> {
 		const record = this.records.get(instanceId);
 		if (!record) {
 			return false;
@@ -676,18 +735,29 @@ export class ScheduleEngine {
 	}
 
 	async setMuted(instanceId: string, muted: boolean, now = this.options.clock()): Promise<boolean> {
-		const record = this.records.get(instanceId);
-		if (!record) {
-			return false;
-		}
-		record.state = muted ? "muted" : "notified";
-		record.updatedAt = now;
-		await this.options.store.writeInstance(record);
-		return true;
+		return this.serialize(async () => {
+			const record = this.records.get(instanceId);
+			if (!record) {
+				return false;
+			}
+			record.state = muted ? "muted" : "notified";
+			record.updatedAt = now;
+			await this.options.store.writeInstance(record);
+			return true;
+		});
 	}
 
 	/** Snooze re-keys the instance (spec §1): a new due time is a new identity. */
 	async snooze(instanceId: string, minutes: number, now = this.options.clock()): Promise<SnoozeResult | null> {
+		return this.serialize(() => this.reschedule(instanceId, minutes, now));
+	}
+
+	/**
+	 * Cancels the predecessor's push by the id it carries, so a registration an
+	 * in-flight pass wrote while this snooze was queued behind it is withdrawn
+	 * rather than left to fire beside its successor's.
+	 */
+	private async reschedule(instanceId: string, minutes: number, now: number): Promise<SnoozeResult | null> {
 		const record = this.records.get(instanceId);
 		if (!record) {
 			return null;
@@ -731,21 +801,23 @@ export class ScheduleEngine {
 	}
 
 	async snoozeUntil(instanceId: string, dueLocal: string, now = this.options.clock()): Promise<SnoozeResult | null> {
-		const record = this.records.get(instanceId);
-		if (!record) {
-			return null;
-		}
-		const parsed = wallClockParts(dueLocal);
-		if (!parsed) {
-			return null;
-		}
-		const current = wallClockParts(record.dueLocal);
-		if (!current) {
-			return null;
-		}
-		const deltaMs = Date.UTC(parsed.ymd.y, parsed.ymd.m - 1, parsed.ymd.d, parsed.time.hour, parsed.time.minute) -
-			Date.UTC(current.ymd.y, current.ymd.m - 1, current.ymd.d, current.time.hour, current.time.minute);
-		return this.snooze(instanceId, Math.round(deltaMs / 60000), now);
+		return this.serialize(async () => {
+			const record = this.records.get(instanceId);
+			if (!record) {
+				return null;
+			}
+			const parsed = wallClockParts(dueLocal);
+			if (!parsed) {
+				return null;
+			}
+			const current = wallClockParts(record.dueLocal);
+			if (!current) {
+				return null;
+			}
+			const deltaMs = Date.UTC(parsed.ymd.y, parsed.ymd.m - 1, parsed.ymd.d, parsed.time.hour, parsed.time.minute) -
+				Date.UTC(current.ymd.y, current.ymd.m - 1, current.ymd.d, current.time.hour, current.time.minute);
+			return this.reschedule(instanceId, Math.round(deltaMs / 60000), now);
+		});
 	}
 
 	/**
@@ -755,8 +827,17 @@ export class ScheduleEngine {
 	 * reminder is not published a second time — ntfy.sh delivers both copies of a
 	 * repeat registration rather than replacing the pending one — and every
 	 * registration the index no longer wants is withdrawn by that id.
+	 *
+	 * The pass reads its clock once it is the only one running, not when it is
+	 * called: a pass that waited behind a slow registration with a `now` from
+	 * before it would see a due time that has already begun as still ahead, and
+	 * register a push for it.
 	 */
-	async syncServerScheduled(now = this.options.clock()): Promise<ServerScheduleResult> {
+	async syncServerScheduled(now?: number): Promise<ServerScheduleResult> {
+		return this.serialize(() => this.publishServerSchedule(now ?? this.options.clock()));
+	}
+
+	private async publishServerSchedule(now: number): Promise<ServerScheduleResult> {
 		const result: ServerScheduleResult = { sent: [], cleared: [], failed: [], deferred: [] };
 		const send = this.options.sendScheduled;
 		if (!send) {

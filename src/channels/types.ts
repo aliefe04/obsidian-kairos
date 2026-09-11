@@ -86,9 +86,29 @@ export class ChannelRegistry {
 		return this.channels.filter((channel) => channel.isConfigured(settings));
 	}
 
-	/** Sends to every configured channel; one channel failing never blocks another. */
+	/**
+	 * Sends to every configured channel whatever its mode; one channel failing
+	 * never blocks another. The one caller is the `Test notification` command,
+	 * where reaching each configured channel is the point. The fire path is
+	 * `deliverLocal`.
+	 */
 	async deliver(msg: OutboundMessage, ctx: ChannelContext): Promise<DeliveryResult[]> {
 		return this.deliverTo(this.configured(ctx.settings), msg, ctx);
+	}
+
+	/**
+	 * The path a *firing* reminder takes: only the channels that deliver without a
+	 * server. A `server-scheduled` channel is registered ahead of time by
+	 * `syncServerScheduled` and its registration is what the provider holds for
+	 * this due time, so asking it to send again at the moment the reminder fires
+	 * is a second push for one due time. `ntfy` cannot deliver an already-started
+	 * schedule either: it clamps the `X-At` it is handed to ten seconds out
+	 * (`MIN_SERVER_DELAY_SECONDS`), so the duplicate arrives ten seconds after the
+	 * alert it duplicates — the third arrival in the `.testvault` trace of
+	 * 2026-09-11, a reminder due 11:14 delivered at 11:14:10.
+	 */
+	async deliverLocal(msg: OutboundMessage, ctx: ChannelContext): Promise<DeliveryResult[]> {
+		return this.deliverTo(this.configured(ctx.settings).filter((channel) => channel.mode === "local"), msg, ctx);
 	}
 
 	/** The same, restricted to the channels that schedule on their own server. */
