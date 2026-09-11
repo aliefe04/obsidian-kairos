@@ -34,28 +34,25 @@ Radicale: a single Python process, no database, disk-backed. The container below
 keeps one named volume and no more.
 
 ```yaml
-# docker-compose.yml — the light footprint: one service, one volume, no database
+# /opt/radicale/docker-compose.yml — the light footprint: one service, one volume, no database
 services:
   radicale:
-    image: tomsquest/docker-radicale:3
+    image: tomsquest/docker-radicale:latest   # there is no `:3` tag; pinned by digest where it matters
     container_name: radicale
     restart: unless-stopped
     ports:
-      - "127.0.0.1:5232:5232"   # behind a TLS proxy; see Reachability
+      - "5232:5232"           # reachable from the LAN; see Reachability for TLS
     volumes:
-      - radicale-data:/data
-      - ./radicale/config:/config/config:ro
-      - ./radicale/users:/data/users:ro
-    mem_limit: 64m
+      - ./collections:/data/collections
+      - ./users:/data/users
+      - ./config.toml:/config/config:ro
+    mem_limit: 96m
     security_opt:
       - no-new-privileges:true
-
-volumes:
-  radicale-data:
 ```
 
 ```ini
-# radicale/config
+# /opt/radicale/config.toml
 [server]
 hosts = 0.0.0.0:5232
 max_connections = 20
@@ -63,7 +60,7 @@ max_connections = 20
 [auth]
 type = htpasswd
 htpasswd_filename = /data/users
-# bcrypt, not plain: this file is the only thing between the internet and the
+# bcrypt, not plain: this file is the only thing between the network and the
 # user's tasks, and `plain` is for throwaway test servers only.
 htpasswd_encryption = bcrypt
 
@@ -75,14 +72,26 @@ filesystem_folder = /data/collections
 type = owner_only
 ```
 
-Create the account — the only step that needs a shell, and the only one whose
-secret should not be typed into a chat window:
+The image ships neither `htpasswd` nor `bcrypt` on the default `python3` — the
+hash has to be made with the virtualenv Radicale itself runs under, which is also
+the library that will verify it:
 
 ```sh
-docker run --rm -v "$PWD/radicale/users:/data/users" --entrypoint sh tomsquest/docker-radicale:3 \
-  -c 'htpasswd -B -c /data/users kairos'   # prompts for the password
+cd /opt/radicale
+PASS=$(openssl rand -base64 36 | tr -d '/+=' | head -c 28)
+docker run --rm --entrypoint /venv/bin/python tomsquest/docker-radicale:latest \
+  -c 'import bcrypt,sys;print(bcrypt.hashpw(sys.argv[1].encode(),bcrypt.gensalt(rounds=12)).decode())' \
+  "$PASS" > /tmp/hash
+printf 'kairos:%s\n' "$(cat /tmp/hash)" > users && rm /tmp/hash
+printf '%s\n' "$PASS" > .caldav-password
+chmod 600 users .caldav-password      # readable by root only; it is the only copy
 docker compose up -d
 ```
+
+`GET /<user>/` answers **403** until the user's first collection exists. That is
+not a misconfiguration: with `rights = owner_only` there is nothing to read yet,
+and the channel creates the collection itself with `MKCALENDAR` on the first
+reminder.
 
 The collection does **not** have to be created by hand: the channel creates it on
 the first reminder. With `rights = owner_only` the collection URL is
@@ -95,6 +104,30 @@ https://kairos.example.com/kairos/kairos/
 
 Paste that into **Settings → Kairos → CalDAV collection URL**, with the user and
 password below it.
+
+## The deployment this was verified against
+
+Installed 2026-09-11 on the Debian 12 box (`192.168.3.56`), beside the other
+stacks under `/opt`:
+
+| | |
+| --- | --- |
+| Path | `/opt/radicale/` (`docker-compose.yml`, `config.toml`, `users`, `collections/`, `.caldav-password`) |
+| Image | `tomsquest/docker-radicale:latest`, digest `sha256:0f1b45abed8b…` |
+| Ports | `0.0.0.0:5232` |
+| Password | `/opt/radicale/.caldav-password` (mode 600, root only) — read it there and type it into the phone; it appears nowhere else |
+| Collection URL | `http://192.168.3.56:5232/kairos/kairos/` |
+
+Verified over the network from another machine with the channel's own code (not
+`curl`): the collection was created on the first write, a Turkish title survived
+escaping and folding, moving the due time left exactly one resource, and the
+delete returned the task to `404`. The account used for that run was removed
+afterwards; only `kairos` remains.
+
+Note the server already runs a `cloudflared` tunnel for other services. Publishing
+this collection through it would give the phone an HTTPS name iOS trusts, which is
+the cleanest answer to the TLS point below — but that is a change to a running
+tunnel, so it is left for a deliberate decision rather than done quietly.
 
 ## Reachability
 
@@ -134,6 +167,7 @@ is the same one — so use one URL everywhere.
 | A collection that does not exist yet | Verified: `MKCALENDAR` then retry, against an empty server |
 | Third-party CalDAV lists appear in iOS Reminders | Documented by Nextcloud Tasks (client list) and by iOS's account type; not measured here |
 | **A `VTODO` with a `VALARM` actually alarms on iOS** | **Not verified.** No one involved can measure it from outside an iPhone. Treat the alarm as unconfirmed until a reminder written on the Mac rings on the phone at its due minute (`docs/risks.md`, R15) |
+| The channel against the deployed server, over the network | Verified from another machine with the plugin's own code: bootstrap, Turkish title folded and escaped, one resource after a due-time move, `404` after the delete |
 | Registration ahead of time, withdrawal on completion | Engine-level, covered by `tests/schedule.perChannelPush.test.ts`: `deleteAfterDue` is what removes a task whose due time has passed |
 
 The cheap way to settle the last line: write `- [ ] test 5 minutes from now
