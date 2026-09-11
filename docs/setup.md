@@ -1,7 +1,11 @@
 # Setting up delivery
 
-Kairos has three delivery channels. Each one is independent. The desktop channel is on by default.
-The other two stay off until you configure them.
+Kairos has four delivery channels. Each one is independent. The desktop channel is on by default;
+the rest stay off until you configure them.
+
+Which one you want depends on where the alert has to land. `ntfy` pushes to a phone in seconds, with
+Obsidian closed. The CalDAV channel writes a task into a calendar account iOS shows in its **Reminders**
+app, so the phone's own alarm fires — see [`recipes/caldav-reminders.md`](recipes/caldav-reminders.md).
 
 The first question is usually "will it alert me when Obsidian is closed?". The answer depends on the
 channel, so read the table in `docs/delivery.md` if you want the engineering version. The short
@@ -34,7 +38,7 @@ Test it: open the command palette and run **Test notification**. It sends throug
 is configured.
 
 Limit: nothing fires while Obsidian is closed. A plugin cannot run in a closed application. This is
-why the other two channels exist.
+why the channels that deliver without it exist.
 
 ## 2. ntfy — an alert on your phone with Obsidian closed
 

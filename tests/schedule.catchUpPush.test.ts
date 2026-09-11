@@ -160,14 +160,13 @@ describe("the fire path and the registration that covers it", () => {
 		const id = h.engine.instanceIdOf(reminder);
 		await h.engine.syncServerScheduled(NOW);
 
+		// Muted: the user asked to stop being alerted, and the due time is behind us.
+		// The registration is retired from the record — no later pass repeats it — but
+		// the provider is not asked to delete it: it has delivered that push or is
+		// about to, and a delete of a delivered notification is read by the phone's
+		// client as the user dismissing it.
 		h.setNow(DUE + 2 * 60 * 1000);
-		expect((await h.engine.tick()).fired).toEqual([id]);
-		expect(h.fires).toEqual([{ instanceId: id, serverScheduled: true }]);
-
-		// The registration is retired from the record — no later pass repeats it —
-		// but the provider is not asked to delete it: it has delivered that push or
-		// is about to, and a delete of a delivered notification is read by the
-		// phone's client as the user dismissing it.
+		await h.engine.setMuted(id, true);
 		const pass = await h.engine.syncServerScheduled();
 		expect(pass.cleared).toEqual([id]);
 		expect(h.server.cleared).toEqual([]);
@@ -176,7 +175,7 @@ describe("the fire path and the registration that covers it", () => {
 		expect(h.store.instances.get(id)?.pushFor).toBeUndefined();
 	});
 
-	it("keeps the registration of a record that is about to fire, and retires it after the fire", async () => {
+	it("keeps the registration of a record that is about to fire, past the fire, until the line goes", async () => {
 		// A reminder registered before the app closed and due while it was shut.
 		// `main.start()` reaches the pass from `applyIndex` and the catch-up tick
 		// only after it, so the pass runs over a record whose due time has passed.
@@ -216,14 +215,21 @@ describe("the fire path and the registration that covers it", () => {
 			expect(h.server.sent.map((message) => message.instanceId)).toEqual([id]);
 			expect(h.local.sent.map((message) => message.instanceId)).toEqual([id]);
 
-			// The fire wrote `notified`, so the record has left the waiting set: the
-			// pass after it drops the marker, and still sends no delete — the
-			// provider has delivered that push or is about to.
+			// The fire wrote `notified`, but the line is still in the note and still
+			// unchecked: the registration stays, so the task sits in the phone's list
+			// waiting to be ticked off. It still sends no delete — the provider has
+			// delivered that push or is about to.
 			const after = await h.engine.syncServerScheduled();
-			expect(after.cleared).toEqual([id]);
+			expect(after.cleared).toEqual([]);
 			expect(h.server.cleared).toEqual([]);
 			expect(h.server.clearedPushIds).toEqual([]);
-			expect(h.store.instances.get(id)?.pushIds?.["fake-server"]).toBeUndefined();
+			expect(h.store.instances.get(id)?.pushIds?.["fake-server"]).toBe("push-1");
+			expect(h.store.instances.get(id)?.pushFor).toBe(DUE_LOCAL);
+
+			// Completing the line is what removes it.
+			await h.engine.sync([]);
+			expect(h.server.cleared).toEqual([id]);
+			expect(h.server.clearedPushIds).toEqual(["push-1"]);
 			expect(h.store.instances.get(id)?.pushFor).toBeUndefined();
 		}
 	});

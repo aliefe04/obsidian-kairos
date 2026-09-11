@@ -132,7 +132,7 @@ describe("one registration per server-scheduled channel", () => {
 		expect(h.store.instances.get(id)?.pushIds).toEqual({ calendar: "calendar-1" });
 	});
 
-	it("deletes a passed registration only where the channel asks for it", async () => {
+	it("keeps a fired reminder's entry while the note still asks, and lets the line take it away", async () => {
 		const h = harness();
 		const reminder = parsedReminder({ dueLocal: "2026-09-11T09:00" });
 		await h.engine.sync([reminder]);
@@ -140,20 +140,101 @@ describe("one registration per server-scheduled channel", () => {
 		await h.engine.syncServerScheduled(NOW);
 		expect(h.store.instances.get(id)?.pushIds).toEqual({ ntfy: "ntfy-1", calendar: "calendar-1" });
 
-		// The reminder comes due while the app is open and is delivered locally, so
-		// the registrations have served their purpose and the record leaves the live
-		// set with its due time behind it.
+		// The reminder fires while the app is open. Its line is still in the note,
+		// unchecked, so the task is still open — and Reminders is where the user ticks
+		// it off. Deleting the entry the moment it rings would take that away and leave
+		// the list out of step with the note.
 		h.setNow(DUE + 60 * 1000);
 		await h.engine.tick();
 		await h.engine.syncServerScheduled(DUE + 60 * 1000);
+		expect(h.calendar.clearedPushIds).toEqual([]);
+		expect(h.ntfy.clearedPushIds).toEqual([]);
+		expect(h.store.instances.get(id)?.pushIds).toEqual({ ntfy: "ntfy-1", calendar: "calendar-1" });
 
-		// A calendar entry is deleted, or a task completed at 09:00 would still sit
-		// in the list at 10:00. The ntfy push is not: its own clients read a delete of
-		// a delivered notification as the user dismissing it.
+		// Completing or deleting the line is what removes it: the entry belongs to the
+		// line, and the line is gone. Both channels are asked, each with its own id —
+		// this is a user action ("I am done with this"), which is also why `ntfy`'s
+		// delivered notification may be deleted here while the engine's own retirement
+		// of an expired push leaves it alone.
+		await h.engine.sync([]);
+		expect(h.calendar.clearedPushIds).toEqual(["calendar-1"]);
+		expect(h.ntfy.clearedPushIds).toEqual(["ntfy-1"]);
+		expect(h.store.instances.get(id)?.pushIds).toBeUndefined();
+	});
+
+	it("deletes a muted reminder's entry, while the delivered ntfy push is left alone", async () => {
+		const h = harness();
+		const reminder = parsedReminder({ dueLocal: "2026-09-11T09:00" });
+		await h.engine.sync([reminder]);
+		const id = h.engine.instanceIdOf(reminder);
+		await h.engine.syncServerScheduled(NOW);
+		expect(h.calendar.clearedPushIds).toEqual([]);
+
+		// Muting means "stop alerting me", and an entry left in the list would keep
+		// alerting: the channel that owns a real entry takes it back. `ntfy` does not,
+		// because a delete of a delivered notification reads as the user dismissing it.
+		h.setNow(DUE + 60 * 1000);
+		await h.engine.setMuted(id, true);
+		await h.engine.tick();
+		await h.engine.syncServerScheduled(DUE + 60 * 1000);
 		expect(h.calendar.clearedPushIds).toEqual(["calendar-1"]);
 		expect(h.ntfy.clearedPushIds).toEqual([]);
-		// Either way the record stops claiming the registration.
 		expect(h.store.instances.get(id)?.pushFor).toBeUndefined();
+	});
+
+	it("does not register a quiet-hours reminder at its folded time", async () => {
+		const h = harness();
+		// A quiet-hours alarm is parsed as a digest: its alert moved to the digest
+		// window, so it has no due-time delivery to hold. Registering it would put a
+		// real alarm on the phone at the hour the user asked to be left alone.
+		const reminder = parsedReminder({ dueLocal: "2026-09-11T23:30", severity: "digest" });
+		await h.engine.sync([reminder]);
+		const id = h.engine.instanceIdOf(reminder);
+		await h.engine.syncServerScheduled(NOW);
+		expect(h.ntfy.sent).toBe(0);
+		expect(h.calendar.sent).toBe(0);
+		expect(h.store.instances.get(id)?.pushFor).toBeUndefined();
+	});
+
+	it("registers a channel that returns no id once, not on every pass", async () => {
+		// `ntfy` answers without an id when the publish body is unparsable, and a
+		// channel that names entries after the instance never returns one at all. "No
+		// id" means "cannot be withdrawn by handle", not "not registered": leaving it
+		// out would republish that reminder on every pass, since every pass would find
+		// the channel still outstanding.
+		const settings = testSettings();
+		const registry = new ChannelRegistry();
+		let sends = 0;
+		const bare: DeliveryChannel = {
+			id: "bare",
+			name: "bare",
+			mode: "server-scheduled",
+			isConfigured: () => true,
+			send: async () => {
+				sends += 1;
+				return { ok: true };
+			},
+			clear: async () => undefined,
+		};
+		registry.register(bare);
+		const context: ChannelContext = channelContext(settings, NOW);
+		const engine = makeEngine({
+			now: NOW,
+			sendScheduled: async (message, _record, channels) => registry.deliverScheduled(message, context, channels),
+			clearScheduled: async (instanceId, pushIds) => registry.clearInstance(instanceId, context, pushIds),
+			scheduledChannels: scheduledChannelsOf(registry, settings),
+		});
+		const reminder = parsedReminder({ dueLocal: "2026-09-11T09:00" });
+		await engine.engine.sync([reminder]);
+		const id = engine.engine.instanceIdOf(reminder);
+		await engine.engine.syncServerScheduled(NOW);
+		await engine.engine.syncServerScheduled(NOW + 1000);
+		await engine.engine.syncServerScheduled(NOW + 2000);
+
+		expect(sends).toBe(1);
+		// Recorded as registered, with no handle: the instance id is what a withdrawal
+		// falls back to.
+		expect(engine.store.instances.get(id)?.pushIds).toEqual({ bare: "" });
 	});
 
 	it("migrates the pre-channel push id of an existing record", async () => {

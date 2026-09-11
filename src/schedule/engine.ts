@@ -547,6 +547,20 @@ export class ScheduleEngine {
 				this.records.delete(record.instanceId);
 				continue;
 			}
+			// A record the note has dropped takes its registration with it, whatever
+			// its state: the entry belongs to the line, and the line is gone. This is
+			// what makes completing the checkbox — the ordinary way a reminder ends —
+			// remove the task from the phone, including for one that has already fired
+			// and is kept in the list until now.
+			if (record.state !== "snoozed") {
+				const pushes = this.pushesFor(record);
+				if (pushes !== undefined) {
+					this.forgetPushes(record);
+					record.updatedAt = now;
+					await this.options.store.writeInstance(record);
+					await this.clearPush(record.instanceId, pushes);
+				}
+			}
 			// A snoozed instance outlives the line it came from: the new time only
 			// exists in state until the note is rewritten. Fired and acked
 			// instances are history.
@@ -921,6 +935,14 @@ export class ScheduleEngine {
 			if (record.state !== "scheduled" && record.state !== "armed") {
 				continue;
 			}
+			// A `digest` severity is a quiet-hours reminder: its alarm was folded into
+			// the digest window when the note was parsed and it has no due-time alert at
+			// all (delivery.md, quiet hours). Registering it here would put a real alarm
+			// on the phone at the hour the user asked to be left alone, with the app
+			// closed and nothing to soften it.
+			if (record.severity === "digest") {
+				continue;
+			}
 			const due = recordEpochMs(record, this.options.tzId);
 			if (!Number.isFinite(due) || due <= now) {
 				continue;
@@ -1009,6 +1031,15 @@ export class ScheduleEngine {
 			// retired below as before, so the pass after that fire is the one that
 			// drops the marker.
 			if (record.state === "scheduled" || record.state === "armed") {
+				continue;
+			}
+			// A reminder that has fired is still written in the note, unchecked, so its
+			// entry stays: Reminders is where the user ticks it off, and deleting the
+			// entry the moment it rings would take the task away and leave the list out
+			// of step with the note that still asks for it. What the note stops asking
+			// for is withdrawn by `sync` when the line goes, and what the user has
+			// finished with (`acked`, `muted`, `snoozed`) is retired below.
+			if (record.state === "notified" || record.state === "missed") {
 				continue;
 			}
 			const pushes = this.pushesFor(record);

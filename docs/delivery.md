@@ -159,7 +159,7 @@ an owned, reviewed app on two stores, and it re-solves a problem ntfy/Bark alrea
 | A catch-up fires, or a fold fires at its window, with no registration for that due time | Delivered through **every** configured channel. Nothing server-side holds the due time that has already begun — the pass registers only times still ahead — so the provider publishes the push now and clamps it to its minimum delay, and the alert lands seconds after launch. This is the only delivery that due time has, so suppressing it would leave the phone silent while the record read as delivered |
 | A fire already covered by a registration (`pushFor === dueLocal`) | Delivered through the local channels only: the provider is holding that push, and publishing again would deliver a second copy ten seconds after the alert it duplicates |
 | A re-arm to a due time still in the future | Registered normally, because nothing server-side holds that time yet |
-| Inside quiet hours (decided when the note is parsed, from the time written) | Folded into the next digest, always — even for alarms |
+| Inside quiet hours (decided when the note is parsed, from the time written) | Folded into the next digest, always — even for alarms. Such a reminder is a `digest`, and it is never registered with a push provider for its written time: that would put a real alarm on the phone at the hour the user asked to be left alone |
 | Alert fires on two devices at once | The lease decides; the loser receives nothing and records nothing |
 
 The default is deliberate: a late alert is recoverable, a silently dropped one is not.

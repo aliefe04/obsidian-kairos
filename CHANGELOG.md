@@ -24,6 +24,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **The phone's task was deleted the moment the reminder fired.** A fired reminder left the
+  registration set, so the next pass retired its entry — which for a calendar channel meant deleting
+  it. The line is still in the note, unchecked, so the task is still open, and Reminders is where the
+  user ticks it off. An entry now stays while the note asks for it and goes when the note stops:
+  completing or deleting the line withdraws it, and `acked` or `muted` (the user is finished with it)
+  deletes it as before.
+- **A quiet-hours reminder was registered with a push provider for its written time.** Such a
+  reminder is parsed as a digest and delivered in the digest window, but it was still mirrored into
+  every server-scheduled channel at its written time — a real alarm at the hour the user asked to be
+  left alone, with the app closed and nothing to soften it.
 - **Every channel refused left a reminder covered by nothing.** A pass whose registrations were all
   refused still recorded the due time as covered, so the catch-up fire went to the local channels
   only and the phone that never received the push stayed silent.

@@ -19,6 +19,7 @@ It depends on which channel you configured.
 | Obsidian mobile open, in the foreground | yes, an in-app notice |
 | Obsidian mobile in the background, or closed | **no**, and no plugin can do it |
 | ntfy push configured | **yes** |
+| CalDAV channel configured | **yes**, from the Reminders app, through the calendar account |
 | Calendar file configured | **yes**, from the calendar application |
 
 The middle row is a platform limit, not a missing feature. Obsidian mobile cannot run plugin code in
@@ -38,8 +39,8 @@ Work down this list. It is ordered by how often each cause occurs.
    from scheduling an alert.
 3. **Is the checkbox incomplete?** `- [x]` cancels the reminder.
 4. **Was Obsidian running?** The desktop channel needs the application open. See the first question.
-5. **Is a channel configured?** Desktop is on by default. ntfy and the calendar file are off until you
-   configure them.
+5. **Is a channel configured?** Desktop is on by default. ntfy, CalDAV and the calendar file are off
+   until you configure them.
 6. **Was the alert older than the grace time?** An alert more than 15 minutes overdue is delivered
    late, and the text says how late. With the `skip_and_mark_missed` policy it is not delivered at
    all, and it appears in the agenda as missed.

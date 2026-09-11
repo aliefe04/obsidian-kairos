@@ -569,10 +569,15 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 		if (!pass) {
 			return "push scheduling: no pass yet";
 		}
-		// A registered push is one the server is holding for this device; the count
-		// is the same store the engine reads, so it survives a restart. A record can
-		// hold one per server-scheduled channel.
-		const pending = this.engine?.snapshot().filter((record) => Object.keys(record.pushIds ?? {}).length > 0).length ?? 0;
+		// A registered push is one the server is holding for this device; the count is
+		// the same store the engine reads, so it survives a restart. A record can hold
+		// one per server-scheduled channel, and a reminder that has already fired keeps
+		// its entry — its line is still in the note — so only the ones still waiting to
+		// be delivered are counted.
+		const pending =
+			this.engine
+				?.snapshot()
+				.filter((record) => (record.state === "scheduled" || record.state === "armed") && Object.keys(record.pushIds ?? {}).length > 0).length ?? 0;
 		return `push scheduling: ${pass.sent.length} registered, ${pending} pending, ${pass.failed.length} failed, ${pass.deferred.length} deferred, ${pass.cleared.length} cleared`;
 	}
 
