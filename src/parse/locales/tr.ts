@@ -2,6 +2,10 @@ import type { LocalePack } from "./index";
 
 export const tr: LocalePack = {
 	tag: "tr",
+	// Read from Obsidian's own bundled moment (`moment.locale("tr").format("dddd")`),
+	// because the parse table above is lower-cased for lookup and cannot supply the
+	// spelling a Turkish vault's daily notes carry. Verified active, not a fallback.
+	weekdayDisplay: ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"],
 	relative: {
 		bugün: "today",
 		yarın: "tomorrow",
