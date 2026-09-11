@@ -173,7 +173,7 @@ is the same one — so use one URL everywhere.
 | Third-party CalDAV lists appear in iOS Reminders | Documented by Nextcloud Tasks (client list) and by iOS's account type; not measured here |
 | **A `VTODO` with a `VALARM` actually alarms on iOS** | **Not verified.** No one involved can measure it from outside an iPhone. Treat the alarm as unconfirmed until a reminder written on the Mac rings on the phone at its due minute (`docs/risks.md`, R15) |
 | The channel against the deployed server, over the network | Verified from another machine with the plugin's own code: bootstrap, Turkish title folded and escaped, one resource after a due-time move, `404` after the delete. The account it authenticated with was created with **bcrypt** (`$2b$12$`) by the one-liner above, so that path is exercised, not just written down |
-| Registration ahead of time, withdrawal on completion | Engine-level, covered by `tests/schedule.perChannelPush.test.ts`: `deleteAfterDue` is what removes a task whose due time has passed |
+| Registration ahead of time, withdrawal on completion | Engine-level, covered by `tests/schedule.perChannelPush.test.ts`: an entry stays while its line is in the note — including after it has fired, since Reminders is where the user ticks it off — and is deleted when the line goes, when the reminder is muted, or when it is acknowledged |
 
 The cheap way to settle the last line: write `- [ ] test 5 minutes from now
 09:00` into a dated note, let Kairos register it, close Obsidian, and wait. If the

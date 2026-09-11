@@ -95,7 +95,14 @@ export class VaultIndexer {
 	private async processFile(file: TFile, cached?: CachedMetadata | null): Promise<ParseNoteResult> {
 		const cache = cached ?? this.options.app.metadataCache.getFileCache(file);
 		if (!carriesCheckboxes(cache)) {
-			return { reminders: [], ambiguous: false, dateSource: null };
+			// Reported, not just returned: a note that has lost its last checkbox has
+			// lost its reminders, and the caller's map is the only place that knows
+			// them. Staying silent here leaves the engine holding a reminder whose line
+			// no longer exists — it would fire, and no scan would ever cancel it, since
+			// a full scan skips a file with no checkboxes too.
+			const empty: ParseNoteResult = { reminders: [], ambiguous: false, dateSource: null };
+			this.options.onFile(file.path, empty.reminders, empty.ambiguous);
+			return empty;
 		}
 		const content = await this.options.app.vault.cachedRead(file);
 		const settings = this.options.settings();

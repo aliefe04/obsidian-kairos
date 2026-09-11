@@ -315,6 +315,42 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 
 	/** Full rescan and rebuild of the due set. */
 	async rescan(): Promise<ScanSummary | null> {
+		return this.rescanOnce();
+	}
+
+	/**
+	 * One scan at a time, with one queued behind it if the vault changed mid-scan.
+	 *
+	 * `vault.on("rename")` and `vault.on("delete")` both call this fire-and-forget,
+	 * and a bulk vault sync (LiveSync, a folder drop) fires them while a scan is
+	 * walking — `scanAll` yields to the event loop every 25 files, so a scan is
+	 * genuinely interruptible. Two scans at once clear the index map for each other,
+	 * and whichever finishes first syncs a map that is missing every file it visited
+	 * before the other's clear: those records look deleted, and their registrations
+	 * are withdrawn for good. Sharing the promise also saves the second full walk.
+	 */
+	private async rescanOnce(): Promise<ScanSummary | null> {
+		if (this.inFlightScan !== null) {
+			// The change that asked for this scan may have landed after the walking scan
+			// passed its file, so one more scan is owed when this one finishes.
+			this.rescanQueued = true;
+			return this.inFlightScan;
+		}
+		const scan = this.runScan().finally(() => {
+			this.inFlightScan = null;
+			if (this.rescanQueued) {
+				this.rescanQueued = false;
+				void this.rescanOnce();
+			}
+		});
+		this.inFlightScan = scan;
+		return scan;
+	}
+
+	private inFlightScan: Promise<ScanSummary | null> | null = null;
+	private rescanQueued = false;
+
+	private async runScan(): Promise<ScanSummary | null> {
 		const engine = this.engine;
 		const indexer = this.indexer;
 		if (!engine || !indexer) {
@@ -323,14 +359,29 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 		// The scan calls `applyIndex` for every file it reads, and those calls must not
 		// sync the engine: the index is complete only when the scan returns, and the
 		// sync below treats what it is given as complete.
-		this.scanning = true;
-		let summary: ScanSummary;
-		try {
-			summary = await indexer.scanAll();
-		} finally {
-			this.scanning = false;
+		//
+		// The map is rebuilt, not accumulated. It is never pruned otherwise, so a note
+		// that was deleted or renamed — or one that has lost its last checkbox, which a
+		// scan skips entirely — would keep re-offering its reminders on every sync, and
+		// the engine would hold a reminder whose line no longer exists.
+		const generation = (this.scanGeneration += 1);
+		this.remindersByPath.clear();
+		// Not merely "a scan is running": a scan that throws leaves the map partial, and
+		// a single later edit would then sync that partial map and cancel every record
+		// belonging to a file the scan never reached — permanently, since a cancelled
+		// record is not resurrected. The index counts as complete only once a whole scan
+		// has been synced, so a failed one degrades to "no incremental syncs until the
+		// next scan succeeds" rather than to deleted registrations.
+		this.indexComplete = false;
+		const summary = await indexer.scanAll();
+		// Two scans can overlap (a rename during a scan). Only the newest owns the index;
+		// an older one syncing a map the newer has already cleared would see an index
+		// going backwards, with the same cancellations.
+		if (generation !== this.scanGeneration) {
+			return summary;
 		}
 		const result = await engine.sync(this.collectReminders());
+		this.indexComplete = true;
 		if (summary.ambiguousNotes.length > 0) {
 			new Notice(`${summary.ambiguousNotes.length} notes could not be date-resolved`, 6000);
 		}
@@ -351,13 +402,13 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 		// this the note would be parsed and then ignored until the next launch, rename
 		// or delete.
 		//
-		// Not while a scan is running, though. `scanAll` calls this per file as it goes,
-		// and `engine.sync` treats what it is given as the *complete* index: the first
-		// file of a launch would be the whole index, every record loaded from disk
-		// would look departed, and each would be cancelled and its registration
+		// Not while the index is unknown, though. `scanAll` calls this per file as it
+		// goes, and `engine.sync` treats what it is given as the *complete* index: the
+		// first file of a launch would be the whole index, every record loaded from
+		// disk would look departed, and each would be cancelled and its registration
 		// withdrawn — for good, since a cancelled record is never resurrected. `rescan`
 		// syncs the finished map itself; this path is for a single file changing.
-		if (!this.scanning) {
+		if (this.indexComplete) {
 			// The order is the launch order: fire what has come due, then register or
 			// withdraw — a fire that finds its registration still on the record reads it
 			// to avoid publishing a second copy of the same due time.
@@ -367,8 +418,15 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 		await this.syncServerSchedule();
 	}
 
-	/** Whether a full scan is in progress, in which case only `rescan` may sync. */
-	private scanning = false;
+	/**
+	 * Whether `remindersByPath` holds a complete index, i.e. whether a whole scan has
+	 * finished and been synced. Until it does, an incremental change must not be
+	 * turned into an engine sync: the map would be partial, and the engine reads it
+	 * as the full set of reminders.
+	 */
+	private indexComplete = false;
+	/** Incremented per scan, so an older overlapping scan cannot sync a newer one's map. */
+	private scanGeneration = 0;
 
 	private readonly remindersByPath = new Map<string, { reminders: ParsedReminder[]; ambiguous: boolean }>();
 

@@ -10,9 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **A CalDAV channel, so a reminder can reach an iPhone's Reminders app.** One `VTODO` per reminder,
   with an absolute alarm at the due instant, written into a collection you name. A CalDAV account
   added in iOS Settings surfaces that collection as a list, so the phone alarms with Obsidian
-  closed. The resource name is derived from the instance id, so an edited due time updates the task
-  in place instead of leaving the old one to fire as well, and a cancelled reminder is deleted from
-  the instance id alone. A collection that does not exist yet is created on the first write
+  closed. The resource name is derived from the instance id, so writing the same instance twice
+  rewrites one task, and a cancelled reminder is deleted from the instance id alone — even if no
+  handle was stored. An edited due time is a new instance (the id carries the time), so it replaces
+  the old task by withdrawing it rather than by an in-place update. A collection that does not exist yet is created on the first write
   (`MKCALENDAR`; Radicale answers a `PUT` into a missing collection with `409`). Registration,
   withdrawal and deletion verified against a real Radicale. Setup: `docs/recipes/caldav-reminders.md`.
 - **Each server-scheduled channel keeps its own registration.** The record held a single push id, so

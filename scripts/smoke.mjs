@@ -255,6 +255,7 @@ async function main() {
 		// hits most often: Obsidian was closed when the alert was due, so the
 		// launch-time catch-up has to deliver it instead of dropping it.
 		const past = new Date(now.getTime() - 2 * 60 * 1000);
+		const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 		const wall = `${pad(past.getHours())}:${pad(past.getMinutes())}`;
 		const iso = `${past.getFullYear()}-${pad(past.getMonth() + 1)}-${pad(past.getDate())}`;
 		// The note is named the way the vault's daily notes are named (folder and
@@ -288,7 +289,25 @@ async function main() {
 				return cached;
 			})()`,
 		);
+		// A second note with a checkbox, so the vault has *two* records. It is what makes
+		// the launch path observable: a scan reports one file at a time, and a sync
+		// driven by a single report would treat this note's record — or the other
+		// one's — as deleted, depending on which file the scan reached first.
+		const decoyPath = `${DAILY_FOLDER}/${tomorrow.getFullYear()}/${pad(tomorrow.getDate())}-${pad(tomorrow.getMonth() + 1)}-${tomorrow.getFullYear()}-${weekdays[tomorrow.getDay()]}.md`;
+		const decoyBody = `- [ ] smoke decoy ${pad(tomorrow.getHours())}:${pad(tomorrow.getMinutes())}\n`;
+		await cdp.evaluate(
+			`(async () => {
+				const path = ${JSON.stringify(decoyPath)};
+				const folder = path.split("/").slice(0, -1).join("/");
+				if (!(await app.vault.adapter.exists(folder))) { await app.vault.createFolder(folder); }
+				const existing = app.vault.getAbstractFileByPath(path);
+				if (existing) { await app.vault.modify(existing, ${JSON.stringify(decoyBody)}); }
+				else { await app.vault.create(path, ${JSON.stringify(decoyBody)}); }
+				return true;
+			})()`,
+		);
 		report.note = { path: notePath, body };
+		report.decoy = { path: decoyPath, body: decoyBody };
 		report.noteCacheItems = cachedItems;
 		report.steps.push({
 			step: "daily note created through the vault API, indexed, rescanned, tick forced",
@@ -369,7 +388,52 @@ async function main() {
 		report.live = live;
 		report.steps.push({
 			step: "a line written while the app runs becomes a reminder without a rescan",
-			ok: live.indexed === true && live.instances.length === 1 && live.instances[0].state === "scheduled",
+			// `armed` is as correct as `scheduled`: the due time is ten minutes out and
+			// the default lead is ten, so which side of that boundary the poll lands on
+			// is timing, not behaviour. The claim under test is that a record appeared
+			// at all, without a rescan.
+			ok: live.indexed === true && live.instances.length === 1 && ["scheduled", "armed"].includes(live.instances[0].state),
+		});
+
+		// Reload the plugin over that record: this is the launch path, where state is
+		// read from disk and a full scan then rebuilds the index. A scan reports one
+		// file at a time, so a sync driven by those partial reports would treat every
+		// other record as deleted — cancelling it and withdrawing its registration, for
+		// good. Nothing else here covers it, because a fresh vault starts empty.
+		const reloaded = await cdp.evaluate(`(async () => {
+			app.plugins.disablePlugin("kairos");
+			await new Promise((resolve) => setTimeout(resolve, 300));
+			app.plugins.enablePlugin("kairos");
+			// Wait for the launch rescan to have rebuilt the index over both notes.
+			const deadline = Date.now() + 12000;
+			let records = [];
+			for (;;) {
+				const loaded = app.plugins.plugins.kairos;
+				records = loaded && loaded.engine ? loaded.engine.snapshot() : [];
+				if (records.length >= 2 || Date.now() > deadline) { break; }
+				await new Promise((resolve) => setTimeout(resolve, 200));
+			}
+			return {
+				count: records.length,
+				records: records.map((record) => ({ title: record.title, state: record.state, pushIds: record.pushIds ?? null })),
+			};
+		})()`);
+		report.reloaded = reloaded;
+		// The two whose lines are still in their notes. `smoke test` is expected to be
+		// cancelled — the live step replaced its note's body, so that line is gone.
+		// Both are named, and both are checked, on purpose: a partial sync cancels
+		// whichever record the scan had not reached yet, so asserting on one named
+		// record would pass or fail by accident of directory order.
+		const surviving = reloaded.records.filter((record) => record.title === "smoke live" || record.title === "smoke decoy");
+		report.steps.push({
+			step: "a plugin reload keeps the reminders whose lines exist: state is read, then rescanned",
+			ok: surviving.length === 2 && surviving.every((record) => ["scheduled", "armed"].includes(record.state)),
+		});
+		// And the line the live step removed is cancelled, not left to fire: a reminder
+		// whose note no longer asks for it is over.
+		report.steps.push({
+			step: "a line removed from a note cancels its reminder",
+			ok: reloaded.records.find((record) => record.title === "smoke test")?.state === "cancelled",
 		});
 
 		// The mirror the same pass wrote is the other half of "it is set up": the

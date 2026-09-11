@@ -491,7 +491,6 @@ export class ScheduleEngine {
 					existing.title = reminder.title;
 					existing.line = reminder.line;
 					existing.titleHash = titleHash;
-					existing.severity = reminder.severity;
 					touched = true;
 					result.updated += 1;
 				}
