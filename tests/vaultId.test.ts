@@ -45,6 +45,18 @@ describe("the vault id", () => {
 		expect(id).toBe("shared-vault-id");
 	});
 
+	it("finds the vault's id even when this device's setting names another folder", async () => {
+		// The phone that has been running holds the old default in its own settings,
+		// and plugin settings are not reliably synced. Missing the file the vault
+		// already carries would mint a second identity — and so a second copy of
+		// every reminder it writes.
+		const adapter = fakeAdapter({ [`${DEFAULT_VAULT_STATE_FOLDER}/${VAULT_ID_FILE}`]: "shared\n" });
+		const id = await loadVaultId(adapter, ".kairos", "stale-device-id", () => "brand-new");
+		expect(id).toBe("shared");
+		// And it does not write a second file for the folder its setting names.
+		expect(adapter.files.has(`.kairos/${VAULT_ID_FILE}`)).toBe(false);
+	});
+
 	it("writes this device's existing id out rather than replacing it", async () => {
 		// Migration. A vault already in use has state files and server registrations
 		// named after its id; minting a new one would strand every one of them.

@@ -1,5 +1,5 @@
 import type { DataAdapter } from "obsidian";
-import { vaultStateFolderName } from "./schedule/stateStore";
+import { DEFAULT_VAULT_STATE_FOLDER, vaultStateFolderName } from "./schedule/stateStore";
 
 /**
  * The vault's shared identity, kept in the vault rather than in each device.
@@ -23,18 +23,39 @@ import { vaultStateFolderName } from "./schedule/stateStore";
 /** The file name inside the vault's state folder. */
 export const VAULT_ID_FILE = "vault-id";
 
+/**
+ * Every folder the identity may be in, most specific first.
+ *
+ * The configured folder is the one to use, but it is a *setting*, and a setting
+ * is per device: a phone that has been running holds whatever default its own
+ * `data.json` was written with, and whether a sync service carries plugin data
+ * across is not something to rely on. Looking in the documented folder as well
+ * means the identity a vault already holds is found even behind a stale setting —
+ * whereas missing it would mint a second identity, and so a second copy of every
+ * reminder, which is the failure the shared file exists to prevent.
+ */
+function candidates(folder: string): string[] {
+	const configured = vaultStateFolderName(folder);
+	return configured === DEFAULT_VAULT_STATE_FOLDER ? [configured] : [configured, DEFAULT_VAULT_STATE_FOLDER];
+}
+
 /** The identity, or `""` when there is none to read. */
 export async function readVaultId(adapter: DataAdapter, folder: string): Promise<string> {
-	const path = `${vaultStateFolderName(folder)}/${VAULT_ID_FILE}`;
-	try {
-		if (!(await adapter.exists(path))) {
-			return "";
+	for (const candidate of candidates(folder)) {
+		try {
+			const path = `${candidate}/${VAULT_ID_FILE}`;
+			if (await adapter.exists(path)) {
+				const value = (await adapter.read(path)).trim();
+				if (value.length > 0) {
+					return value;
+				}
+			}
+		} catch {
+			// An unreadable file is treated as absent; try the next folder, and let
+			// the caller write a fresh one when none holds an id.
 		}
-		return (await adapter.read(path)).trim();
-	} catch {
-		// An unreadable file is treated as absent; the caller writes a fresh one.
-		return "";
 	}
+	return "";
 }
 
 /**
