@@ -280,10 +280,32 @@ the usual cause of *"CalDAV Account Verification Failed"*.
 6. Open Reminders: a list called **Kairos** is there, and tasks written by Kairos
    arrive in it.
 
-**Check the network path in Safari first.** Open `https://192.168.1.56:5233/` on
-the phone (after installing the certificate). If Safari cannot load it, the
-account never will — fix the network (same LAN, or the WireGuard profile the
-server already runs) before retrying.
+**Before touching the account, settle whether the certificate is trusted**, with
+the self-test page the front serves on both addresses:
+
+```
+https://192.168.1.56:5233/cert-ok
+```
+
+It requires no authentication, so the answer is only about the certificate.
+Safari showing *"Kairos certificate is trusted"* means the root is installed
+**and** enabled; a certificate warning means one of the two steps is missing (see
+step 1). This matters because a client that rejects the certificate never
+completes a request, so it leaves **no trace** in the access log — "the phone
+never tried" and "the phone tried and the handshake failed" look identical from
+the server. The page is what separates them.
+
+Two logs are kept for the same reason, and both must be read before concluding
+anything:
+
+- `/opt/caddy/data/access.log` — what reached the HTTPS front, with the `Host`
+  and whether an `Authorization` header arrived.
+- `/opt/caddy/data/download.log` — whether the phone ever fetched the CA. A phone
+  showing "Profile Downloaded" and a phone that never reached the port look the
+  same in Settings on the device, and nothing else distinguishes them.
+
+Neither log can see a *rejected* handshake, so an empty log is not evidence that
+the phone did not try — only the self-test page answers that.
 
 If Reminders shows no list after a *successful* login, retry the account URL as
 the principal (`https://192.168.1.56:5233/kairos/`), then as the collection
