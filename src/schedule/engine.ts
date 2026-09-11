@@ -37,6 +37,10 @@ export interface ReminderRecord {
 	snoozeCount: number;
 	/** Instance id this record took over from, when it was born from a snooze. */
 	supersedes?: string;
+	/** Message id of the pending server-side push, when the provider returned one. */
+	pushId?: string;
+	/** The `dueLocal` value the push was registered for. */
+	pushFor?: string;
 	lease?: Lease;
 	firedBy: string[];
 	firstSeenAt: number;
@@ -245,7 +249,7 @@ export interface EngineOptions {
 	/** Mirrors into channels that deliver without the app running. */
 	sendScheduled?: (message: OutboundMessage, record: ReminderRecord) => Promise<DeliveryResult>;
 	onDeliver?: (record: ReminderRecord, message: OutboundMessage, result: DeliveryResult) => void;
-	clearScheduled?: (instanceId: string) => Promise<void>;
+	clearScheduled?: (instanceId: string, pushId?: string) => Promise<void>;
 	hash?: HashFn;
 	leaseTtlMs?: number;
 	dedupeWindowMs?: number;
@@ -265,7 +269,7 @@ export const SCHEDULE_BACKOFF_MAX_MS = 6 * 60 * 60 * 1000;
 export const SCHEDULE_RETRY_MARGIN_MS = 60 * 1000;
 
 export interface ServerScheduleResult {
-	/** Instances mirrored to a server-scheduled channel in this pass. */
+	/** Instances registered (or re-registered) on a server-scheduled channel in this pass. */
 	sent: string[];
 	/** Instances whose pending push was cancelled. */
 	cleared: string[];
@@ -301,7 +305,6 @@ export class ScheduleEngine {
 	/** The digest window pinned for each folded catch-up (see `computeDuePlan`). */
 	private foldWindows = new Map<string, number>();
 	private firedIds = new Set<string>();
-	private scheduledPushes = new Set<string>();
 	/** Registrations the provider refused, with the time they may be retried. */
 	private scheduleBackoff = new Map<string, { attempts: number; retryAt: number }>();
 	private loaded = false;
@@ -418,9 +421,12 @@ export class ScheduleEngine {
 			const bornFromSnooze = record.supersedes !== undefined && indexedPaths.has(record.sourcePath);
 			if ((record.state === "scheduled" || record.state === "armed") && !bornFromSnooze) {
 				record.state = "cancelled";
+				const pushId = record.pushId;
+				delete record.pushId;
+				delete record.pushFor;
 				record.updatedAt = now;
 				await this.options.store.writeInstance(record);
-				await this.clearPush(record.instanceId);
+				await this.clearPush(record.instanceId, pushId);
 				result.cancelled += 1;
 				continue;
 			}
@@ -660,9 +666,12 @@ export class ScheduleEngine {
 		}
 		await this.options.store.writeAck({ instanceId, deviceId: this.options.deviceId, ackedAt: now });
 		record.state = "acked";
+		const pushId = record.pushId;
+		delete record.pushId;
+		delete record.pushFor;
 		record.updatedAt = now;
 		await this.options.store.writeInstance(record);
-		await this.clearPush(instanceId);
+		await this.clearPush(instanceId, pushId);
 		return true;
 	}
 
@@ -695,6 +704,9 @@ export class ScheduleEngine {
 			this.options.hash,
 		);
 		record.state = "snoozed";
+		const pushId = record.pushId;
+		delete record.pushId;
+		delete record.pushFor;
 		record.updatedAt = now;
 		await this.options.store.writeInstance(record);
 		const zone = reminderZone(record, this.options.tzId);
@@ -714,7 +726,7 @@ export class ScheduleEngine {
 		delete next.lease;
 		this.records.set(newInstanceId, next);
 		await this.options.store.writeInstance(next);
-		await this.clearPush(instanceId);
+		await this.clearPush(instanceId, pushId);
 		return { oldInstanceId: instanceId, newInstanceId, dueLocal };
 	}
 
@@ -738,10 +750,11 @@ export class ScheduleEngine {
 
 	/**
 	 * Mirrors the live index into the channels that deliver with Obsidian closed
-	 * (docs/spec/state-model.md §7). Every reminder due inside the horizon is
-	 * (re)sent — a repeat is idempotent because the payload carries the instance
-	 * identity — and every instance that was acked, completed or re-keyed since
-	 * the last pass has its pending push cleared.
+	 * (docs/spec/state-model.md §7). A live reminder is registered once per due
+	 * time: the record remembers the id the provider returned, so an unchanged
+	 * reminder is not published a second time — ntfy.sh delivers both copies of a
+	 * repeat registration rather than replacing the pending one — and every
+	 * registration the index no longer wants is withdrawn by that id.
 	 */
 	async syncServerScheduled(now = this.options.clock()): Promise<ServerScheduleResult> {
 		const result: ServerScheduleResult = { sent: [], cleared: [], failed: [], deferred: [] };
@@ -766,6 +779,11 @@ export class ScheduleEngine {
 			// Live before the backoff check: a deferred instance must keep its slot,
 			// or the clear pass below would cancel a push that is still wanted.
 			live.add(record.instanceId);
+			// The push this record already carries is the one the server will deliver
+			// at this due time, so publishing it again would deliver a second copy.
+			if (record.pushFor === record.dueLocal) {
+				continue;
+			}
 			const backoff = this.scheduleBackoff.get(record.instanceId);
 			if (backoff !== undefined && backoff.retryAt > now) {
 				result.deferred.push(record.instanceId);
@@ -776,6 +794,17 @@ export class ScheduleEngine {
 				const outcome = await send(message, record);
 				if (outcome.ok) {
 					this.scheduleBackoff.delete(record.instanceId);
+					// A provider that hands back a new id has left the previous
+					// registration pending; withdraw it before it can deliver too.
+					if (outcome.id !== undefined && record.pushId !== undefined && outcome.id !== record.pushId) {
+						await this.clearPush(record.instanceId, record.pushId);
+					}
+					if (outcome.id !== undefined) {
+						record.pushId = outcome.id;
+					}
+					record.pushFor = record.dueLocal;
+					record.updatedAt = now;
+					await this.options.store.writeInstance(record);
 					result.sent.push(record.instanceId);
 				} else {
 					this.noteScheduleFailure(record.instanceId, now, due);
@@ -786,14 +815,21 @@ export class ScheduleEngine {
 				result.failed.push(record.instanceId);
 			}
 		}
-		for (const instanceId of this.scheduledPushes) {
-			if (live.has(instanceId)) {
+		// Every registration the index no longer wants — completed, re-keyed, past
+		// due or outside the horizon — is withdrawn by its message id, which is the
+		// only handle ntfy.sh honours for a pending scheduled message.
+		for (const record of this.snapshot()) {
+			if (record.pushFor === undefined || live.has(record.instanceId)) {
 				continue;
 			}
-			await this.clearPush(instanceId);
-			result.cleared.push(instanceId);
+			const pushId = record.pushId;
+			delete record.pushId;
+			delete record.pushFor;
+			record.updatedAt = now;
+			await this.options.store.writeInstance(record);
+			await this.clearPush(record.instanceId, pushId);
+			result.cleared.push(record.instanceId);
 		}
-		this.scheduledPushes = live;
 		for (const instanceId of [...this.scheduleBackoff.keys()]) {
 			if (!live.has(instanceId)) {
 				this.scheduleBackoff.delete(instanceId);
@@ -825,12 +861,12 @@ export class ScheduleEngine {
 		this.scheduleBackoff.set(instanceId, { attempts, retryAt });
 	}
 
-	private async clearPush(instanceId: string): Promise<void> {
+	private async clearPush(instanceId: string, pushId?: string): Promise<void> {
 		if (!this.options.clearScheduled) {
 			return;
 		}
 		try {
-			await this.options.clearScheduled(instanceId);
+			await this.options.clearScheduled(instanceId, pushId);
 		} catch {
 			// Cancelling a push is best effort; the server side expires it anyway.
 		}

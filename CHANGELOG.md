@@ -5,6 +5,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **A live reminder was registered again on every pass, duplicating the push.** `ntfy.sh` does not
+  replace a pending scheduled message when the same `X-Sequence-ID` is published again — both copies
+  are delivered — so the engine now remembers the registration: the instance record stores the
+  `dueLocal` the push was made for (`pushFor`) and an unchanged reminder is not published at all.
+- **Completing or rescheduling a task did not cancel its push.** Cancellation was an empty-body
+  publish carrying `X-Sequence-ID`; `ntfy.sh` answers `200 message_delete` to a delete by sequence id
+  and still delivers the message. Both facts were probed live on 2026-09-11. Cancellation now sends
+  `DELETE /<topic>/<message id>` with the id the publish returned, persisted on the instance record so
+  it survives a restart. That form was observed to stop a delivery from `curl` (5 of 5) and Bun's
+  `fetch` (6 of 6), immediately and up to 45 s after publication, while node v24's `fetch` (undici)
+  cancelled 0 of 3 — every delete answered `200` with a real `message_delete` event and every message
+  was delivered anyway. A `200` is not proof of cancellation, and Obsidian's `requestUrl` is
+  Electron/Chromium's stack, not undici, so no guarantee is made that a completed task cannot buzz the
+  phone (ADR 12, R14).
+- **A push published with `X-Sequence-ID` could not be cancelled.** Probed live on `ntfy.sh`
+  (2026-09-11): with the header present, `DELETE /<topic>/<message id>` and `DELETE /<topic>/<sequence
+  id>` both answered `200` and the message was delivered; the same publish without the header was
+  cancelled by message id and never arrived. The publish therefore sends no sequence id — the record's
+  `pushFor` already stops a repeated registration, so the header bought nothing.
+
+### Changed
+
+- The push summary line reports what it counts: `push scheduling: 2 registered, 3 pending, 0 failed,
+  0 deferred, 1 cancelled`. `registered` is the registrations the last pass made and `pending` is the
+  pushes the server is holding, read back from state; both replace the old `sent` wording, which
+  implied the every-pass re-send that no longer happens.
+
 ## [0.1.1] — 2026-09-11
 
 ### Fixed

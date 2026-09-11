@@ -175,6 +175,46 @@ it. New entries go at the end.
   against `ntfy.sh` by posting both forms and confirming the accepted one arrived at the second it
   named. The test that came with the defect asserted the rejected form, which is the general lesson:
   an assertion written from the implementation pins the bug rather than the protocol.
+- **`X-Sequence-ID` does not update or cancel a pending scheduled message, so the plugin persists the
+  message id instead.** Probed against `ntfy.sh` on 2026-09-11: publishing a second message under the
+  same sequence id — header form or URL-path form — delivers both copies rather than replacing the
+  pending one; `DELETE /<topic>/<sequence id>` and `GET /<topic>/<sequence id>/delete` answer `200`
+  with a real `message_delete` event, and the scheduled message is still delivered. A success response
+  is not evidence of cancellation. Only `DELETE /<topic>/<message id>`, using the `id` field of the
+  publish response, was observed to stop a delivery, and it did: that message never arrived.
+  **Decision:** the engine stores the returned id on the instance record (`pushId`) together with the
+  `dueLocal` it was registered for (`pushFor`), and it cancels by that id. A reminder whose record
+  still carries both is not published again — the idempotency that keeps one registration from
+  becoming two pushes — and the previous id is deleted when a registration is superseded.
+  **Alternatives:** keeping the sequence-id cancel (it answered `200` and cancelled nothing, so the
+  phone rang for a task already done); re-publishing as an update (it delivered a duplicate push);
+  holding the id only in memory (a restart would lose the only handle that cancels, and the record
+  set that held it was also the tracking state, so both are now the same persisted field).
+  **Consequence:** cancellation depends on a value the provider returns and the plugin persists, not
+  on an id the caller chooses, and it survives a restart. A provider that returns no id leaves
+  `pushFor` set — the reminder is still not re-published — but its push cannot be withdrawn; the
+  engine degrades to "one registration, no cancel" rather than to duplicates.
+- **A `200` on the delete is not proof of cancellation; whether it takes effect depends on the HTTP
+  client.** Probed against `ntfy.sh` on 2026-09-11, publishing with an absolute `X-At` and cancelling
+  with `DELETE /<topic>/<message id>`: `curl` cancelled 5 of 5 and Bun's `fetch` 6 of 6 — immediate,
+  and 2 s / 20 s / 45 s after publication — and none of those messages arrived; node v24's `fetch`
+  (undici) cancelled 0 of 3, with every DELETE answered `200` with a real `message_delete` event and
+  every message delivered anyway. The plugin's deletes go through Obsidian's `requestUrl`, which is
+  Electron/Chromium's networking stack rather than undici, so the expectation is that they behave like
+  the curl-class clients — **[INFERENCE]**, not a measurement; R14 names the probe that would settle
+  it. **Consequence:** the plugin sends the id-based delete and stops there. A cancellation whose push
+  is still delivered is the server ignoring a request the response reported as `200`, and no document
+  claims a stopped delivery — a completed task may still buzz the phone.
+- **The publish carries no `X-Sequence-ID`, because the header poisons the only cancel that works.**
+  Probed against `ntfy.sh` on 2026-09-11: a message published *with* the header could not be cancelled
+  by any key — `DELETE /<topic>/<message id>` and `DELETE /<topic>/<sequence id>` both answered `200`
+  and the message was delivered — while the same publish without the header was cancelled by message
+  id and never arrived. The header had nothing left to buy, since the record's `pushFor` already stops
+  an unchanged reminder from being published again, so `buildNtfyRequest` no longer sends it.
+  **Consequence:** the message id the provider returns is the only handle observed to cancel a
+  delivery, and it stays usable because no publish writes a sequence id alongside it. Whether the
+  server acts on the delete is still the client's decision (the bullet above), so the id buys an
+  attempt, not a stopped push.
 
 ## 13. Quiet hours are applied at parse time, by one implementation
 

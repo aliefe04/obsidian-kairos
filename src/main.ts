@@ -68,7 +68,7 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 			clock: () => Date.now(),
 			send: (message) => this.deliverEverywhere(message),
 			sendScheduled: (message) => this.deliverServerScheduled(message),
-			clearScheduled: (instanceId) => this.registry.clearInstance(instanceId, this.channelContext()),
+			clearScheduled: (instanceId, pushId) => this.registry.clearInstance(instanceId, this.channelContext(), pushId),
 			onDeliver: (record, message) => {
 				if (record.severity === "alarm" && message.actions) {
 					// The summary is deliberately title-free, so the title is composed
@@ -524,7 +524,10 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 		if (!pass) {
 			return "push scheduling: no pass yet";
 		}
-		return `push scheduling: ${pass.sent.length} sent, ${pass.failed.length} failed, ${pass.deferred.length} deferred, ${pass.cleared.length} cancelled`;
+		// A registered push is one the server is holding for this device; the count
+		// is the same store the engine reads, so it survives a restart.
+		const pending = this.engine?.snapshot().filter((record) => record.pushId !== undefined).length ?? 0;
+		return `push scheduling: ${pass.sent.length} registered, ${pending} pending, ${pass.failed.length} failed, ${pass.deferred.length} deferred, ${pass.cleared.length} cancelled`;
 	}
 
 	private async copyDiagnostics(): Promise<void> {

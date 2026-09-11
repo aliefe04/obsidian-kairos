@@ -47,6 +47,8 @@ interface ReminderRecord {
   state: 'scheduled' | 'armed' | 'notified' | 'snoozed' | 'acked' | 'muted' | 'missed' | 'cancelled';
   snoozeCount: number;
   supersedes?: string;         // predecessor instanceId when born from a snooze
+  pushId?: string;             // message id of the pending server-side push
+  pushFor?: string;            // the dueLocal value the push was registered for
   lease?: { deviceId: string; seq: number; expiresAt: number };
   firedBy: string[];           // deviceIds
   firstSeenAt: number;         // epoch ms

@@ -27,6 +27,8 @@ export interface DeliveryResult {
 	detail?: string;
 	/** Epoch ms before which a retry is pointless. */
 	retryAt?: number;
+	/** The provider's message id, when it returns one. */
+	id?: string;
 }
 
 export interface ChannelContext {
@@ -53,8 +55,11 @@ export interface DeliveryChannel {
 	mode: ChannelMode;
 	isConfigured(settings: KairosSettings): boolean;
 	send(msg: OutboundMessage, ctx: ChannelContext): Promise<DeliveryResult>;
-	/** Cancel a push that was scheduled on a server. */
-	clear?(instanceId: string, ctx: ChannelContext): Promise<void>;
+	/**
+	 * Cancel a push that was scheduled on a server; `pushId` is the id the
+	 * provider returned when it registered this instance.
+	 */
+	clear?(instanceId: string, ctx: ChannelContext, pushId?: string): Promise<void>;
 }
 
 export class ChannelRegistry {
@@ -103,13 +108,13 @@ export class ChannelRegistry {
 		return results;
 	}
 
-	async clearInstance(instanceId: string, ctx: ChannelContext): Promise<void> {
+	async clearInstance(instanceId: string, ctx: ChannelContext, pushId?: string): Promise<void> {
 		for (const channel of this.all()) {
 			if (!channel.clear) {
 				continue;
 			}
 			try {
-				await channel.clear(instanceId, ctx);
+				await channel.clear(instanceId, ctx, pushId);
 			} catch {
 				// A failed cancellation is not worth an alert: the push expires on its own.
 			}
@@ -127,7 +132,8 @@ export function describeError(error: unknown): string {
 /**
  * The engine records one outcome per instance, so a fan-out collapses to a
  * single result: any channel that succeeded counts as delivered, and every
- * failure is still reported.
+ * failure is still reported. The provider's message id survives the collapse
+ * when a channel returned one, because it is the handle that cancels the push.
  */
 export function combinedResult(results: DeliveryResult[]): DeliveryResult {
 	if (results.length === 0) {
@@ -137,5 +143,10 @@ export function combinedResult(results: DeliveryResult[]): DeliveryResult {
 	if (failures.length === results.length) {
 		return { ok: false, detail: failures.join(", ") };
 	}
-	return failures.length === 0 ? { ok: true } : { ok: true, detail: failures.join(", ") };
+	const id = results.find((result) => result.ok && result.id !== undefined)?.id;
+	return {
+		ok: true,
+		...(failures.length === 0 ? {} : { detail: failures.join(", ") }),
+		...(id === undefined ? {} : { id }),
+	};
 }

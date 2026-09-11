@@ -67,10 +67,28 @@ Design rules for every push channel:
 1. **Payload is the task title only** by default. Note names are opt-in, vault paths never.
 2. **Server-side scheduling is a first-class mode.** A channel declares
    `mode: 'server-scheduled'`; the engine then registers reminders ahead of time (rolling horizon,
-   re-registered whenever the index changes) with `X-At`-style offsets, so the alert survives
-   Obsidian being closed for days — the specific failure of the incumbent's 24-hour window.
-3. **Two-way cancel.** Completing or rescheduling a task clears the scheduled push
-   (`X-Sequence-ID` + `clear()`), so a done task does not buzz the phone an hour later.
+   once per due time — a repeat publish arrives as a second push, not a replacement) with
+   `X-At`-style offsets, so the alert survives Obsidian being closed for days — the specific failure
+   of the incumbent's 24-hour window.
+3. **Two-way cancel, best-effort.** Completing or rescheduling a task deletes the scheduled push by the
+   message id the publish returned (`DELETE /<topic>/<id>`), and that id is persisted on the instance
+   record, so the handle survives a restart. Whether the delete takes effect is the client's, not the
+   plugin's. Probed against `ntfy.sh` on 2026-09-11, publishing with an absolute `X-At`: `curl`
+   cancelled 5 of 5 and Bun's `fetch` 6 of 6 — immediately, and 2 s / 20 s / 45 s after publication —
+   while node v24's `fetch` (undici) cancelled 0 of 3: every DELETE answered `200` with a real
+   `message_delete` event, and every message was delivered anyway. A `200` response is therefore not
+   proof of cancellation, and Obsidian's `requestUrl` is Electron/Chromium's networking stack, not
+   undici. A user who needs the alert withdrawn without that uncertainty should use T2: the `.ics` file
+   is rewritten locally on the same pass, so a completed task removes its `VEVENT` with no server
+   round-trip and no client-dependent delete. `ntfy.sh` does not honour `X-Sequence-ID` for this
+   either: a repeat publish is delivered as a second push, and a message published *with* the header
+   cannot be cancelled at all — deletes by message id and by sequence id both answer `200` while the
+   message still arrives (probed 2026-09-11, ADR 12). The publish therefore carries no sequence id, and
+   the documented update path is not used at all; the record's `pushFor` is what keeps an unchanged
+   reminder from being published twice. Residual limits: a reminder completed while the plugin is not
+   running cannot be withdrawn, because the id it would delete lives in plugin state — the pending push
+   fires, and the completion takes effect on the next launch — and a cancellation the server chooses to
+   ignore cannot be detected from the response.
 4. **A `Test notification` command** that fans out to every configured channel, plus a title-only
    default, because a user who cannot see what will leave their device will not turn the channel on.
 5. **The horizon is the provider's limit, not ours.** The default is three days, which is `ntfy.sh`'s

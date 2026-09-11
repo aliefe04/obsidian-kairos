@@ -93,12 +93,13 @@ describe("server scheduling backoff", () => {
 		expect(third.deferred).toEqual([]);
 		expect(h.recorder.attempts).toBe(2);
 
-		// A success clears the record, so later passes re-register as usual. A
-		// repeated registration is idempotent: the payload carries the instance id.
+		// The success is remembered: a later pass leaves the registration alone,
+		// because ntfy.sh delivers a repeat publish as a second push rather than
+		// replacing the pending one.
 		const fourth = await h.engine.syncServerScheduled(now + 2 * SCHEDULE_BACKOFF_BASE_MS);
 		expect(fourth.deferred).toEqual([]);
-		expect(fourth.sent).toHaveLength(1);
-		expect(h.recorder.attempts).toBe(3);
+		expect(fourth.sent).toEqual([]);
+		expect(h.recorder.attempts).toBe(2);
 	});
 
 	it("doubles the delay per refusal and never exceeds the cap", async () => {
@@ -144,7 +145,10 @@ describe("server scheduling backoff", () => {
 		await h.engine.sync([]);
 		const after = await h.engine.syncServerScheduled(now + 1000);
 		expect(after.deferred).toEqual([]);
-		expect(after.cleared).toContain(h.engine.instanceIdOf(reminder));
+		// Leaving the index cancels the instance through `sync`; the registration
+		// that failed left nothing on the server for the pass to withdraw.
+		expect(after.cleared).toEqual([]);
+		expect(h.cleared).toContain(h.engine.instanceIdOf(reminder));
 	});
 
 	it("never delays the next attempt past the due time", async () => {

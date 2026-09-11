@@ -21,7 +21,7 @@ beforeEach(() => {
 });
 
 describe("buildNtfyRequest", () => {
-	it("posts the title to the topic with the schedule and dedupe headers", () => {
+	it("posts the title to the topic with the schedule headers", () => {
 		const now = DUE - 60 * 60 * 1000;
 		const request = buildNtfyRequest(ntfySettings(), outboundMessage(), { now, includeNoteName: false });
 		expect(request.url).toBe("https://ntfy.sh/kairos-topic");
@@ -29,7 +29,10 @@ describe("buildNtfyRequest", () => {
 		expect(request.headers["X-Title"]).toBe("msg to dentist");
 		expect(request.headers["X-Priority"]).toBe("4");
 		expect(request.headers["X-At"]).toBe(String(Math.round(DUE / 1000)));
-		expect(request.headers["X-Sequence-ID"]).toBe("instance-1");
+		// A message published with X-Sequence-ID cannot be cancelled on ntfy.sh:
+		// deletes by message id and by sequence id both answer `200` and the push
+		// still arrives, so the publish deliberately carries no sequence id.
+		expect(request.headers["X-Sequence-ID"]).toBeUndefined();
 		expect(request.body).toBe("msg to dentist");
 	});
 
@@ -86,19 +89,54 @@ describe("createNtfyChannel", () => {
 		expect(call?.headers?.["X-Title"]).toBe("msg to dentist");
 		expect(call?.headers?.["X-Priority"]).toBe("4");
 		expect(call?.headers?.["X-At"]).toBe(String(Math.round(DUE / 1000)));
-		expect(call?.headers?.["X-Sequence-ID"]).toBe("instance-1");
+		// No X-Sequence-ID: a message published with one cannot be cancelled, so
+		// the publish that the channel actually makes must not carry it either.
+		expect(call?.headers?.["X-Sequence-ID"]).toBeUndefined();
 		expect(call?.body).toBe("msg to dentist");
 	});
 
-	it("clears a scheduled push by re-publishing its sequence id with an empty body", async () => {
-		const settings = ntfySettings();
+	it("surfaces the message id from the publish response", async () => {
+		requestUrlStub.handler = () => ({
+			status: 200,
+			text: '{"id":"WzI0MzE1NQ","time":1789203600}',
+			json: { id: "WzI0MzE1NQ", time: 1789203600 },
+			arrayBuffer: new ArrayBuffer(0),
+			headers: {},
+		});
+		const result = await createNtfyChannel().send(outboundMessage(), channelContext(ntfySettings(), DUE));
+		expect(result.ok).toBe(true);
+		expect(result.id).toBe("WzI0MzE1NQ");
+	});
+
+	it("accepts a publish response with no JSON body, reporting no id", async () => {
+		// A self-hosted server may answer with an empty body; the delivered push
+		// must not turn into a failure just because there is no id to parse.
+		const result = await createNtfyChannel().send(outboundMessage(), channelContext(ntfySettings(), DUE));
+		expect(result.ok).toBe(true);
+		expect(result.id).toBeUndefined();
+	});
+
+	it("cancels the push by deleting the message id the publish returned", async () => {
 		const channel = createNtfyChannel();
-		expect(typeof channel.clear).toBe("function");
-		await channel.clear?.("instance-1", channelContext(settings, DUE));
+		await channel.clear?.("instance-1", channelContext(ntfySettings({ ntfyToken: " tk_secret " }), DUE), "WzI0MzE1NQ");
 		expect(requestUrlStub.calls).toHaveLength(1);
 		const call = requestUrlStub.calls[0];
-		expect(call?.url).toBe("https://ntfy.sh/kairos-topic");
-		expect(call?.headers?.["X-Sequence-ID"]).toBe("instance-1");
+		expect(call?.url).toBe("https://ntfy.sh/kairos-topic/WzI0MzE1NQ");
+		expect(call?.method).toBe("DELETE");
+		expect(call?.headers?.["Authorization"]).toBe("Bearer tk_secret");
+		// No body, and no X-Sequence-ID: a repeat publish published a blank
+		// notification instead of cancelling anything.
+		expect(call?.body).toBe("");
+		expect(call?.headers?.["X-Sequence-ID"]).toBeUndefined();
+	});
+
+	it("falls back to the sequence id when the record carries no message id", async () => {
+		const channel = createNtfyChannel();
+		await channel.clear?.("instance-1", channelContext(ntfySettings(), DUE));
+		expect(requestUrlStub.calls).toHaveLength(1);
+		const call = requestUrlStub.calls[0];
+		expect(call?.url).toBe("https://ntfy.sh/kairos-topic/instance-1");
+		expect(call?.method).toBe("DELETE");
 		expect(call?.body).toBe("");
 	});
 

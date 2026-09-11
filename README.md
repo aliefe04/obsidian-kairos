@@ -71,7 +71,7 @@ notification API available to plugins, so the desktop channel degrades to an in-
 | Tier | Channel mode | Behaviour |
 |---|---|---|
 | Desktop OS notification | `local` | Electron notification plus the alert window with Done, Snooze and Open note. Without Electron (mobile, or a failed notification) it raises an in-app notice. |
-| ntfy push | `server-scheduled` | `POST` to `<server>/<topic>` with `X-At` so the server holds the push until the due time and delivers it with Obsidian closed. `X-Sequence-ID` is the instance id; re-publishing it with an empty body cancels the push. The payload is the task title alone unless "include note name" is enabled. |
+| ntfy push | `server-scheduled` | `POST` to `<server>/<topic>` with `X-At` so the server holds the push until the due time and delivers it with Obsidian closed. The publish response's message id is remembered; cancel deletes it (`DELETE /<topic>/<id>`), and an unchanged reminder is not published twice. The payload is the task title alone unless "include note name" is enabled. |
 | `.ics` export | `local` | Writes an RFC 5545 file (default `kairos.ics`) with `DTSTART;TZID=…` and a display `VALARM`. |
 
 Channel tokens live in `data.json` as plaintext, because Obsidian exposes no secret API and
