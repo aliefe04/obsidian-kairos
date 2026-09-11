@@ -66,10 +66,23 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 			platform: Platform.isMobileApp ? "mobile" : Platform.isDesktopApp ? "desktop" : "unknown",
 			pluginVersion: this.manifest.version,
 			clock: () => Date.now(),
-			// The fire path: the channels that deliver without a server. The
-			// server-scheduled ones are registered ahead of time, and publishing
-			// again here would be a second push for this reminder's due time.
-			send: (message) => this.deliverLocally(message),
+			// One push per due time, and the third argument is what decides which
+			// fan-out serves this fire: `true` means `pushFor === dueLocal`, so the
+			// provider is holding a push for this very due time.
+			send: (message, _record, serverScheduled) => {
+				// Already covered by the registration: the local channels only. Asking
+				// the server-scheduled one to publish again here delivers a second copy
+				// of the alert for one due time.
+				if (serverScheduled) {
+					return this.deliverLocally(message);
+				}
+				// No registration covers this due time — a reminder that came due while
+				// Obsidian was closed, or a fold firing at its window. Every configured
+				// channel: the provider publishes the push now and clamps the schedule
+				// to its minimum delay, so the alert lands seconds after launch. That
+				// late push is the delivery, and for a missed reminder the only one.
+				return this.deliverEverywhere(message);
+			},
 			sendScheduled: (message) => this.deliverServerScheduled(message),
 			clearScheduled: (instanceId, pushId) => this.registry.clearInstance(instanceId, this.channelContext(), pushId),
 			onDeliver: (record, message) => {
@@ -500,7 +513,21 @@ export default class KairosPlugin extends Plugin implements SettingsHost {
 		return created;
 	}
 
-	/** One instance, one outcome: a fan-out reports success if any channel delivered. */
+	/**
+	 * One instance, one outcome: a fan-out reports success if any channel
+	 * delivered. This is the fire path for a due time no registration covers, so
+	 * the server-scheduled channel is included and the provider publishes the push
+	 * now — clamped to its minimum delay — rather than never.
+	 */
+	private async deliverEverywhere(message: OutboundMessage): Promise<DeliveryResult> {
+		return combinedResult(await this.registry.deliver(message, this.channelContext()));
+	}
+
+	/**
+	 * The fire path for a due time the registration already covers: the channels
+	 * that deliver without a server. `Test notification` still uses
+	 * `deliverEverywhere`, because reaching each configured channel is its point.
+	 */
 	private async deliverLocally(message: OutboundMessage): Promise<DeliveryResult> {
 		return combinedResult(await this.registry.deliverLocal(message, this.channelContext()));
 	}

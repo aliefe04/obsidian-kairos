@@ -110,11 +110,17 @@ Rules that are easy to get wrong, so they are stated here then tested:
 - **One push per due time.** A server-scheduled channel is a mirror of the index, not a delivery
   target: the engine registers a reminder ahead of its due time, stores the provider's message id and
   the `dueLocal` it was registered for on the record (`pushFor`), and publishes nothing again while
-  those still match. A *firing* or catch-up re-armed reminder must not register a new one — ntfy
-  clamps a schedule that has already begun to ten seconds out (`MIN_SERVER_DELAY_SECONDS`), so the
-  "duplicate" would land ten seconds *after* the alert it duplicates. A reminder that fires delivers
-  through the local channels only. Traced in the real app on 2026-09-11: one reminder, three
-  deliveries (two at the due second, one at due+10 s) before this rule held.
+  those still match. The fire for a due time the registration covers delivers through the local
+  channels only — ntfy clamps a schedule that has already begun to ten seconds out
+  (`MIN_SERVER_DELAY_SECONDS`), so republishing there would land a second alert ten seconds after the
+  first. A fire no registration covers (the reminder came due while the app was closed, or a fold
+  fires at its window) publishes immediately on every configured channel: the provider clamps it to
+  its minimum delay, and that late push is the only delivery that due time will ever have. A pending
+  registration whose due time is still ahead is withdrawn by message id when it is no longer wanted;
+  one whose due time has passed is dropped from the record without a delete, because a delivered
+  notification that is deleted is read by ntfy's clients as the user dismissing it. Traced in the real
+  app on 2026-09-11: one reminder, three deliveries (two at the due second, one at due+10 s) before
+  this rule held.
 - **Record-set operations are serialized.** `load`, `sync`, `syncServerScheduled`, `ack`, `setMuted`
   and the snooze writes run one at a time in a FIFO queue; a pass queued behind another runs after it
   and reads its clock once it owns the queue, so a pass that waited cannot mistake an already-started

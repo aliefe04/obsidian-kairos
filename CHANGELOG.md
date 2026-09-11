@@ -7,6 +7,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A reminder that came due while Obsidian was closed never reached the phone.** The fire path had
+  been narrowed to the local channels, which is right for a due time the provider already holds a
+  registration for — but the mirroring pass registers only due times still ahead, inside the horizon.
+  A reminder that came due during an outage therefore had no registration at all, and its catch-up
+  reached no server channel: the phone stayed silent, and the record still moved to `notified` with an
+  entry in the fired log, so it read as delivered. A fire whose due time no registration covers now
+  reaches every configured channel again, and the provider publishes the push immediately, clamped to
+  its minimum delay — that late alert is the intended and only delivery for that due time.
+- **Retiring a registration whose due time had passed dismissed it on the phone.** Cancelling a push
+  always deleted it by message id; once that due time had passed the provider had delivered the
+  notification or was about to, and `ntfy`'s clients read a delete of a delivered notification as the
+  user dismissing it. A passed registration is now dropped from the record (`pushId`/`pushFor`) without
+  issuing a delete, so no later pass repeats it and the message is left to the provider. A due time
+  still ahead keeps the existing delete-by-id, which is a genuine cancellation.
 - **A live reminder was registered again on every pass, duplicating the push.** `ntfy.sh` does not
   replace a pending scheduled message when the same `X-Sequence-ID` is published again — both copies
   are delivered — so the engine now remembers the registration: the instance record stores the

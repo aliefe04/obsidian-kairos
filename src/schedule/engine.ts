@@ -244,8 +244,20 @@ export interface EngineOptions {
 	/** Platform identifier recorded in the device heartbeat. */
 	platform: string;
 	pluginVersion: string;
-	/** One outcome per instance: the caller collapses the channel fan-out. */
-	send: (message: OutboundMessage, record: ReminderRecord) => Promise<DeliveryResult>;
+	/**
+	 * One outcome per instance: the caller collapses the channel fan-out.
+	 *
+	 * `serverScheduled` reports whether an existing registration already covers
+	 * this fire — true when the record still carries the push made for its own due
+	 * time (`pushFor === dueLocal`). The provider is holding that push, so
+	 * publishing again would deliver a second copy of the alert and the caller must
+	 * use the local channels only. False means no registration covers this due
+	 * time (a reminder that came due while the app was closed, a fold firing at its
+	 * window); the caller reaches every configured channel, the provider publishes
+	 * the push now and clamps the schedule to its minimum delay, and that late
+	 * alert is the intended delivery — for a missed reminder it is the only one.
+	 */
+	send: (message: OutboundMessage, record: ReminderRecord, serverScheduled: boolean) => Promise<DeliveryResult>;
 	/** Mirrors into channels that deliver without the app running. */
 	sendScheduled?: (message: OutboundMessage, record: ReminderRecord) => Promise<DeliveryResult>;
 	onDeliver?: (record: ReminderRecord, message: OutboundMessage, result: DeliveryResult) => void;
@@ -659,7 +671,9 @@ export class ScheduleEngine {
 		this.firedIds.add(record.instanceId);
 		let result: DeliveryResult = { ok: false, detail: "no delivery function" };
 		try {
-			result = await this.options.send(message, record);
+			// The registration this record carries is the push the provider holds for
+			// this exact due time, so a fire it covers is delivered locally only.
+			result = await this.options.send(message, record, record.pushFor === record.dueLocal);
 		} catch (error) {
 			result = { ok: false, detail: error instanceof Error ? error.message : "delivery threw" };
 		}
@@ -897,18 +911,33 @@ export class ScheduleEngine {
 			}
 		}
 		// Every registration the index no longer wants — completed, re-keyed, past
-		// due or outside the horizon — is withdrawn by its message id, which is the
-		// only handle ntfy.sh honours for a pending scheduled message.
+		// due or outside the horizon — is retired from the record.
 		for (const record of this.snapshot()) {
 			if (record.pushFor === undefined || live.has(record.instanceId)) {
 				continue;
 			}
 			const pushId = record.pushId;
+			const pushFor = record.pushFor;
 			delete record.pushId;
 			delete record.pushFor;
 			record.updatedAt = now;
 			await this.options.store.writeInstance(record);
-			await this.clearPush(record.instanceId, pushId);
+			// A due time that has passed is not cancelled. The provider has delivered
+			// that push or is about to, and its clients read a delete of a delivered
+			// notification as the user dismissing it; the registration is retired from
+			// the record instead, so no later pass repeats it. Only a due time still
+			// ahead is withdrawn by its message id — the handle ntfy.sh honours for a
+			// pending scheduled message.
+			//
+			// `dueLocal` is the `YYYY-MM-DDTHH:mm` the parser produced, so the
+			// unresolvable branch only guards a corrupted state file: it claims
+			// "passed" when the registration was made for a different due time than
+			// the record now carries, never for the due time the record itself covers.
+			const due = recordEpochMs(record, this.options.tzId);
+			const passed = Number.isFinite(due) ? due <= now : pushFor !== record.dueLocal;
+			if (!passed) {
+				await this.clearPush(record.instanceId, pushId);
+			}
 			result.cleared.push(record.instanceId);
 		}
 		for (const instanceId of [...this.scheduleBackoff.keys()]) {

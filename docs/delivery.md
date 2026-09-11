@@ -77,32 +77,46 @@ Design rules for every push channel:
      runs its own pass. The second pass waits, sees the registration the first one wrote, and
      publishes nothing. A pass also reads its clock once it is the only one running, so a pass that
      waited behind a slow registration cannot treat a due time that has already begun as still ahead.
-   - **A due time that has begun is never registered.** `ntfy` clamps `X-At` to ten seconds out, so a
-     registration for a due time that has just passed is not a late registration — it is a second
-     alert ten seconds after the real one. A reminder that is firing, catching up, being notified,
-     folded into a digest or re-armed is delivered through the `local` channels only, and a pending
-     registration for a due time that has begun is withdrawn instead of being published again. A
-     re-arm to a due time still in the future is registered like any other future time: nothing
-     server-side holds it yet.
+   - **A fire already covered by a registration is never published again.** The record remembers the
+     `dueLocal` its push was made for (`pushFor`), so the fire for that due time — delivering at the
+     minute, or catching up on launch — goes to the `local` channels only. Publishing it again would
+     deliver a second copy: `ntfy` clamps a schedule that has already begun to ten seconds out
+     (`MIN_SERVER_DELAY_SECONDS`), so the "duplicate" lands ten seconds *after* the alert it
+     duplicates. A re-arm to a due time still in the future is registered like any other future time,
+     because nothing server-side holds that one yet.
+   - **A fire no registration covers publishes immediately, and that publish is the delivery.** A
+     reminder that came due while Obsidian was closed has no registration: the pass registers only a
+     due time still ahead, inside the horizon. Its catch-up — and a fold that fires at its window —
+     therefore reaches every configured channel, the provider publishes the push now and clamps it to
+     its minimum delay, and the alert lands seconds after the app opens. Suppressing that publish
+     would leave the phone silent for the only due time it belongs to, while the record still moved to
+     `notified` and the fired log gained an entry — a reminder that reads as delivered and never rang.
+   - **A registration whose due time has passed is retired, not deleted.** Completing, muting or
+     re-keying a reminder withdraws its pending push by message id. Once that due time has passed the
+     delete is not sent: the provider has delivered the push or is about to, and `ntfy`'s clients read
+     a delete of a delivered notification as the user dismissing it on the phone. The registration is
+     dropped from the record (`pushId`/`pushFor`) so no later pass repeats it, and the message is left
+     to the provider. Only a due time still ahead is a cancellation worth sending.
 3. **Two-way cancel, best-effort.** Completing or rescheduling a task deletes the scheduled push by the
-   message id the publish returned (`DELETE /<topic>/<id>`), and that id is persisted on the instance
-   record, so the handle survives a restart. Whether the delete takes effect is the client's, not the
-   plugin's. Probed against `ntfy.sh` on 2026-09-11, publishing with an absolute `X-At`: `curl`
-   cancelled 5 of 5 and Bun's `fetch` 6 of 6 — immediately, and 2 s / 20 s / 45 s after publication —
-   while node v24's `fetch` (undici) cancelled 0 of 3: every DELETE answered `200` with a real
-   `message_delete` event, and every message was delivered anyway. A `200` response is therefore not
-   proof of cancellation, and Obsidian's `requestUrl` is Electron/Chromium's networking stack, not
-   undici. A user who needs the alert withdrawn without that uncertainty should use T2: the `.ics` file
-   is rewritten locally on the same pass, so a completed task removes its `VEVENT` with no server
-   round-trip and no client-dependent delete. `ntfy.sh` does not honour `X-Sequence-ID` for this
-   either: a repeat publish is delivered as a second push, and a message published *with* the header
-   cannot be cancelled at all — deletes by message id and by sequence id both answer `200` while the
-   message still arrives (probed 2026-09-11, ADR 12). The publish therefore carries no sequence id, and
-   the documented update path is not used at all; the record's `pushFor` is what keeps an unchanged
-   reminder from being published twice. Residual limits: a reminder completed while the plugin is not
-   running cannot be withdrawn, because the id it would delete lives in plugin state — the pending push
-   fires, and the completion takes effect on the next launch — and a cancellation the server chooses to
-   ignore cannot be detected from the response.
+   message id the publish returned (`DELETE /<topic>/<id>`) — unless that due time has already passed,
+   in which case the registration is retired from the record without a delete, per rule 2 — and that id
+   is persisted on the instance record, so the handle survives a restart. Whether the delete takes
+   effect is the client's, not the plugin's. Probed against `ntfy.sh` on 2026-09-11, publishing with
+   an absolute `X-At`: `curl` cancelled 5 of 5 and Bun's `fetch` 6 of 6 — immediately, and 2 s / 20 s /
+   45 s after publication — while node v24's `fetch` (undici) cancelled 0 of 3: every DELETE answered
+   `200` with a real `message_delete` event, and every message was delivered anyway. A `200` response
+   is therefore not proof of cancellation, and Obsidian's `requestUrl` is Electron/Chromium's
+   networking stack, not undici. A user who needs the alert withdrawn without that uncertainty should
+   use T2: the `.ics` file is rewritten locally on the same pass, so a completed task removes its
+   `VEVENT` with no server round-trip and no client-dependent delete. `ntfy.sh` does not honour
+   `X-Sequence-ID` for this either: a repeat publish is delivered as a second push, and a message
+   published *with* the header cannot be cancelled at all — deletes by message id and by sequence id
+   both answer `200` while the message still arrives (probed 2026-09-11, ADR 12). The publish therefore
+   carries no sequence id, and the documented update path is not used at all; the record's `pushFor` is
+   what keeps an unchanged reminder from being published twice. Residual limits: a reminder completed
+   while the plugin is not running cannot be withdrawn, because the id it would delete lives in plugin
+   state — the pending push fires, and the completion takes effect on the next launch — and a
+   cancellation the server chooses to ignore cannot be detected from the response.
 4. **A `Test notification` command** that fans out to every configured channel, plus a title-only
    default, because a user who cannot see what will leave their device will not turn the channel on.
 5. **The horizon is the provider's limit, not ours.** The default is three days, which is `ntfy.sh`'s
@@ -137,7 +151,9 @@ an owned, reviewed app on two stores, and it re-solves a problem ntfy/Bark alrea
 | Due while closed, > `grace`, user policy `fire_now_with_age` (**default**) | Fire on launch with the age in the text ("09:00 — 2 h ago") |
 | Same, policy `fold_into_digest` | Deferred to the next digest window (default 08:00 / 18:00) |
 | Same, policy `skip_and_mark_missed` | No alert; the record is marked missed and visible in the agenda view |
-| A catch-up fires, folds into a digest, or is re-armed | Delivered through the local channels only. No server push is registered for the due time that has already begun — `ntfy` would clamp it to ten seconds out and deliver a second alert. A re-arm to a digest window still in the future is registered normally, because nothing server-side holds that time yet |
+| A catch-up fires, or a fold fires at its window, with no registration for that due time | Delivered through **every** configured channel. Nothing server-side holds the due time that has already begun — the pass registers only times still ahead — so the provider publishes the push now and clamps it to its minimum delay, and the alert lands seconds after launch. This is the only delivery that due time has, so suppressing it would leave the phone silent while the record read as delivered |
+| A fire already covered by a registration (`pushFor === dueLocal`) | Delivered through the local channels only: the provider is holding that push, and publishing again would deliver a second copy ten seconds after the alert it duplicates |
+| A re-arm to a due time still in the future | Registered normally, because nothing server-side holds that time yet |
 | Inside quiet hours (decided when the note is parsed, from the time written) | Folded into the next digest, always — even for alarms |
 | Alert fires on two devices at once | The lease decides; the loser receives nothing and records nothing |
 
