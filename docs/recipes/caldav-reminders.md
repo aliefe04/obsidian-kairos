@@ -121,7 +121,7 @@ stacks under `/opt`:
 | Image | `tomsquest/docker-radicale:latest`, digest `sha256:0f1b45abed8b…` |
 | Ports | `0.0.0.0:5232` |
 | Password | `/opt/radicale/.caldav-password` (mode 600, root only) — read it there and type it into the phone; it appears nowhere else |
-| Collection URL | `http://192.168.3.56:5232/kairos/kairos/` |
+| Collection URL | `http://192.168.3.56:5232/kairos/kairos/` — created ahead of time with an authenticated `MKCALENDAR` (`201`, then `PROPFIND` `207`), so the list is visible in Reminders as soon as the account is added, without waiting for a first reminder |
 
 Verified over the network from another machine with the channel's own code (not
 `curl`): the collection was created on the first write, a Turkish title survived
