@@ -292,6 +292,35 @@ describe("one registration per server-scheduled channel", () => {
 		expect(h.store.instances.get(successorId)?.pushIds).toBeUndefined();
 	});
 
+	it("removes an entry a catch-up fire wrote, which stored no handle", async () => {
+		const h = harness();
+		const reminder = parsedReminder({ dueLocal: "2026-09-11T09:00" });
+		await h.engine.sync([reminder]);
+		const id = h.engine.instanceIdOf(reminder);
+
+		// A reminder that comes due while the app is closed is published by the
+		// catch-up fire rather than by the registration pass, and that path records no
+		// handle — so the entry exists on the server with nothing naming it. The line
+		// is then completed or deleted.
+		const record = h.engine.snapshot().find((entry) => entry.instanceId === id);
+		expect(record).toBeDefined();
+		if (record === undefined) {
+			throw new Error("the reminder is missing from the engine");
+		}
+		record.state = "notified";
+		record.updatedAt = NOW;
+		h.setNow(DUE + 60 * 1000);
+
+		await h.engine.sync([]);
+		// The channel that owns a real entry drops it by the instance, which is the one
+		// name both sides know. `ntfy` is not asked: it wants a delivered notification
+		// left alone, and leaving it out is what `deleteAfterDue` is for.
+		expect(h.calendar.cleared).toEqual([id]);
+		expect(h.calendar.clearedPushIds).toEqual([undefined]);
+		expect(h.ntfy.cleared).toEqual([]);
+		expect(h.store.instances.get(id)?.state).toBe("cancelled");
+	});
+
 	it("migrates the pre-channel push id of an existing record", async () => {
 		const first = harness();
 		const reminder = parsedReminder({ dueLocal: "2026-09-11T09:00" });

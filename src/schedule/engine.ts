@@ -607,6 +607,24 @@ export class ScheduleEngine {
 					record.state = "cancelled";
 					record.updatedAt = now;
 					await this.options.store.writeInstance(record);
+					// A reminder that came due while the app was closed is published by
+					// its *catch-up fire*, not by the registration pass, so its entry may
+					// have no handle stored at all. When that is the case the channels
+					// that own a real entry are asked to drop whatever they hold for the
+					// instance — which is why an entry is named after the instance and
+					// not after a due time. Channels that want such entries kept are not
+					// asked: `deleteAfterDue` unset means a delivered notification,
+					// whose deletion reads as the user dismissing it. With a handle in
+					// hand the retirement pass does the withdrawal instead, applying the
+					// same per-channel rule.
+					if (this.pushesFor(record) === undefined) {
+						await this.clearPush(
+							record.instanceId,
+							(this.options.scheduledChannels?.() ?? [])
+								.filter((channel) => channel.deleteAfterDue === true)
+								.map((channel) => ({ channelId: channel.id })),
+						);
+					}
 					result.cancelled += 1;
 					continue;
 				}
