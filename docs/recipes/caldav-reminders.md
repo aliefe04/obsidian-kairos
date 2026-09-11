@@ -112,7 +112,7 @@ password below it.
 
 ## The deployment this was verified against
 
-Installed 2026-09-11 on the Debian 12 box (`192.168.3.56`), beside the other
+Installed 2026-09-11 on the Debian 12 box (`192.168.1.56`), beside the other
 stacks under `/opt`:
 
 | | |
@@ -121,7 +121,8 @@ stacks under `/opt`:
 | Image | `tomsquest/docker-radicale:latest`, digest `sha256:0f1b45abed8b…` |
 | Ports | `0.0.0.0:5232` |
 | Password | `/opt/radicale/.caldav-password` (mode 600, root only) — read it there and type it into the phone; it appears nowhere else |
-| Collection URL | `http://192.168.3.56:5232/kairos/kairos/` — created ahead of time with an authenticated `MKCALENDAR` (`201`, then `PROPFIND` `207`), so the list is visible in Reminders as soon as the account is added, without waiting for a first reminder |
+| Collection URL (the plugin setting) | `http://192.168.1.56:5232/kairos/kairos/` — created ahead of time with an authenticated `MKCALENDAR` (`201`, then `PROPFIND` `207`) and named with `PROPPATCH`, so Reminders shows a list called *Kairos* as soon as the account is added, without waiting for a first reminder |
+| Account URL (the iOS setting) | `http://192.168.1.56:5232/` — the **server**, not the collection. iOS asks for `current-user-principal` and finds the collection itself; measured on this server, `/` answers `/kairos/` as the principal and `/kairos/` lists `kairos/kairos`. Pointing the account at the collection path instead is the usual cause of "CalDAV Account Verification Failed" |
 
 Verified over the network from another machine with the channel's own code (not
 `curl`): the collection was created on the first write, a Turkish title survived
@@ -156,13 +157,31 @@ is the same one — so use one URL everywhere.
 
 ## The iPhone
 
+Two URLs are in play and they are not the same one. The **plugin** wants the
+collection (`…/kairos/kairos/`); the **iOS account** wants the server
+(`…/kairos/` or the bare address), because iOS discovers the collection itself by
+asking for the current user principal. Pointing the account at the collection is
+the usual cause of *"CalDAV Account Verification Failed"*.
+
 1. **Settings → Reminders → Reminders Accounts → Add Account → Other → Add
-   CalDAV Account.**
-2. Server: the base URL (no collection path). User name and password as created
-   above.
-3. When asked which apps to use the account with, tick **Reminders**.
-4. Open Reminders: the collection appears as a list, and tasks written by Kairos
+   CalDAV Account.** (Under Reminders, not under Calendar — that is where the
+   lists end up.)
+2. Server: `192.168.1.56` — the address the **phone's own network** can reach.
+   User name and password as created above.
+3. **Next** will fail on TLS, because the server speaks plain HTTP. That is
+   expected: go **Back → Advanced Settings**, turn **Use SSL off**, set **Port**
+   `5232`, and set the account URL to `http://192.168.1.56:5232/kairos/`.
+4. When asked which apps to use the account with, tick **Reminders**.
+5. Open Reminders: a list called **Kairos** is there, and tasks written by Kairos
    arrive in it.
+
+**Check the network path in Safari first.** Open `http://192.168.1.56:5232/` on the
+phone. If Safari cannot load it, the account never will — fix the network (same
+LAN, or the WireGuard profile the server already runs) before retrying.
+
+If Reminders shows no list after a *successful* login, retry the account URL as
+the principal (`http://192.168.1.56:5232/kairos/`), then as the collection
+(`…/kairos/kairos/`).
 
 ## What is verified, and what still needs the phone
 
